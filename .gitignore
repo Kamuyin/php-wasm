@@ -1,0 +1,62 @@
+# Build output
+out/
+*.wasm
+*.wasm.sha256
+
+# PHP source (fetched at build time — never commit)
+/tmp/php-wasm-build*/
+/tmp/php-src*/
+
+# Local build caches
+.ccache/
+ccache/
+
+# Docker build cache
+.buildx-cache/
+
+# Go build artifacts
+tests/runners/wazero/php-wasm-runner
+tests/runners/wazero/wazero
+examples/wazero-cgi-minimal/php-server
+examples/wazero-cgi-minimal/wazero-cgi-minimal
+
+# Go module vendor (we use go mod download)
+vendor/
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# Patch rejects
+*.rej
+*.orig
+
+# Environment files (may contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Release artifacts (managed by CI)
+RELEASE_NOTES.md
+
+# Local test scratch
+scratch/
+local/
+
+.claude/
+deps/
+examples/playground/playground
+examples/wazero-cgi-minimal/wazero-cgi-minimal
+
+tests/runners/wazero/php-wasm-runner
+tests/runners/wazero/wazero

@@ -1,0 +1,50 @@
+# $schema: ../schemas/profile.schema.json
+name: "honeypot"
+description: "Honeypot profile: default + Observer API extension (TODO: not yet implemented)"
+
+configure_flags:
+  - "--enable-mbstring"
+  - "--enable-json"
+  - "--enable-ctype"
+  - "--enable-filter"
+  - "--enable-tokenizer"
+  - "--enable-phar"
+  - "--enable-pdo"
+  - "--with-pdo-sqlite=/usr"
+  - "--with-sqlite3=/usr"
+  - "--enable-xml"
+  - "--enable-dom"
+  - "--enable-simplexml"
+  - "--enable-xmlreader"
+  - "--enable-xmlwriter"
+  - "--enable-bcmath"
+  - "--enable-calendar"
+  # TODO: --with-ext-honeypot=shared when the extension is implemented
+
+extensions_snapshot:
+  - json
+  - mbstring
+  - ctype
+  - filter
+  - tokenizer
+  - phar
+  - pdo
+  - pdo_sqlite
+  - sqlite3
+  - xml
+  - dom
+  - simplexml
+  - xmlreader
+  - xmlwriter
+  - bcmath
+  - calendar
+  # TODO: honeypot
+
+expected_wasm_size_kb: 7700
+
+notes: |
+  TODO: The honeypot Observer API extension is not yet implemented.
+  When complete, it will use zend_observer_fcall_install() to intercept
+  all function calls and stream them via a WASI fd to an out-of-process
+  analyzer. The extension will be a standalone .c file in ext/honeypot/.
+  For now this profile is identical to default. Do not use in production.

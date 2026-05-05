@@ -1,0 +1,9 @@
+# $schema: ../../schemas/source.schema.json
+php_version: "8.2.30"
+source_tag: "php-8.2.30"
+source_sha256: "a0fa6673ba4b0c8335fbab08afb7c2e13a3791f2b5a0928c7ad3d7ad872edf26"
+download_url: "https://www.php.net/distributions/php-8.2.30.tar.gz"
+download_url_alt: "https://downloads.php.net/~release/php-8.2.30.tar.gz"
+branch: "PHP-8.2"
+eol_date: "2026-12-31"
+security_only: true

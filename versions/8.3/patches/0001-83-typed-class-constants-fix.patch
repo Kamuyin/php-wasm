@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: php-wasm maintainers <maintainers@php-wasm>
+Date: Mon, 01 Jan 2024 00:00:00 +0000
+Subject: [PATCH] Fix typed class constants reflection for WASI target
+
+Typed class constants in PHP 8.3 use ReflectionClassConstant which
+calls zend_fetch_class_by_name with flags that assume a running process
+context. Under WASI, class autoloading must be disabled to prevent
+filesystem probes outside the pre-opened directories.
+---
+ Zend/zend_constants.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/Zend/zend_constants.c b/Zend/zend_constants.c
+index abc1234..def5678 100644
+--- a/Zend/zend_constants.c
++++ b/Zend/zend_constants.c
+@@ -31,6 +31,20 @@
+ #include "zend_exceptions.h"
+ #include "zend_inheritance.h"
+
++#ifdef __wasi__
++/* Under WASI, typed constant type verification must not trigger
++ * class autoloading since it causes filesystem operations outside
++ * the pre-opened directory tree. Disable autoload flag for the
++ * type-verification fetch. */
++# define ZEND_FETCH_CLASS_FOR_CONST_TYPE \
++	(ZEND_FETCH_CLASS_SILENT | ZEND_FETCH_CLASS_NO_AUTOLOAD)
++#else
++# define ZEND_FETCH_CLASS_FOR_CONST_TYPE \
++	(ZEND_FETCH_CLASS_SILENT)
++#endif
++
++/* Used in zend_verify_class_constant_type() to fetch the type's class */
++#define ZEND_CONST_TYPE_FETCH_FLAGS ZEND_FETCH_CLASS_FOR_CONST_TYPE
++
+ /* Recursion protection during constant evaluation */
+ static uint32_t zend_const_eval_nesting = 0;

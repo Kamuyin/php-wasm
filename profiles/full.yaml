@@ -1,0 +1,68 @@
+# $schema: ../schemas/profile.schema.json
+name: "full"
+description: "Full profile: default + gd, zip, exif, fileinfo, openssl stubs"
+
+configure_flags:
+  - "--enable-mbstring"
+  - "--enable-json"
+  - "--enable-ctype"
+  - "--enable-filter"
+  - "--enable-tokenizer"
+  - "--enable-phar"
+  - "--enable-pdo"
+  - "--with-pdo-sqlite=/usr"
+  - "--with-sqlite3=/usr"
+  - "--enable-xml"
+  - "--enable-dom"
+  - "--enable-simplexml"
+  - "--enable-xmlreader"
+  - "--enable-xmlwriter"
+  - "--enable-bcmath"
+  - "--enable-calendar"
+  - "--enable-gd"
+  - "--with-jpeg=/usr"
+  - "--with-png=/usr"
+  - "--with-freetype=/usr"
+  - "--enable-zip"
+  - "--with-zip=/usr"
+  - "--enable-exif"
+  - "--enable-fileinfo"
+  - "--with-openssl=/usr"
+  - "--enable-soap"
+  - "--enable-sockets"
+  - "--enable-pcntl"
+
+extensions_snapshot:
+  - json
+  - mbstring
+  - ctype
+  - filter
+  - tokenizer
+  - phar
+  - pdo
+  - pdo_sqlite
+  - sqlite3
+  - xml
+  - dom
+  - simplexml
+  - xmlreader
+  - xmlwriter
+  - bcmath
+  - calendar
+  - gd
+  - zip
+  - exif
+  - fileinfo
+  - openssl
+  - soap
+  - sockets
+
+expected_wasm_size_kb: 14000
+
+notes: |
+  openssl is compiled with WASI-compatible stubs: random number generation uses
+  wasi_snapshot_preview1::random_get. TLS/network operations are stubbed with ENOSYS.
+  gd requires libjpeg, libpng, and freetype compiled as wasm32-wasi static libs —
+  see docker/Dockerfile.builder for build instructions.
+  zip uses libzip compiled for wasm32-wasi.
+  pcntl functions (fork, exec, etc.) are stubbed via 0003-fork-exec-stubs.patch.

@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: php-wasm maintainers <maintainers@php-wasm>
+Date: Mon, 01 Jan 2024 00:00:00 +0000
+Subject: [PATCH 6/8] Disable opcache and JIT for WASI target
+
+opcache requires:
+  1. Shared memory (mmap with MAP_SHARED) for the opcode cache
+  2. RWX memory pages for JIT-compiled native code
+  3. mprotect() to write-protect cache segments
+
+None of these are available in wasm32-wasi Preview1. The JIT compiler
+generates native x86/arm64 machine code and cannot emit WASM instructions
+at runtime. An accidental --enable-opcache will crash on the first
+mmap(MAP_SHARED) call.
+
+This patch makes the opcache startup function return FAILURE immediately
+under __wasi__ and provides no-op stubs for all JIT entry points so the
+linker does not need the full JIT implementation when opcache is disabled
+via configure.
+---
+ ext/opcache/ZendAccelerator.c | 16 ++++++++++++++++
+ ext/opcache/jit/zend_jit.c    | 16 ++++++++++++++++
+ ext/opcache/config.m4         |  9 +++++++++
+ 3 files changed, 41 insertions(+)
+
+diff --git a/ext/opcache/ZendAccelerator.c b/ext/opcache/ZendAccelerator.c
+index 1234abc..5678def 100644
+--- a/ext/opcache/ZendAccelerator.c
++++ b/ext/opcache/ZendAccelerator.c
+@@ -43,6 +43,20 @@
+ #include "zend_string.h"
+ #include "zend_file_handle.h"
+
++#ifdef __wasi__
++/* opcache is unsupported under WASI: no MAP_SHARED, no mprotect, no RWX.
++ * Return FAILURE from startup so PHP disables the extension gracefully. */
++int accel_startup(zend_extension *extension)
++{
++	(void)extension;
++	zend_error(E_NOTICE,
++		"Zend OPcache is disabled: MAP_SHARED mmap and RWX pages are not "
++		"available under WASI (wasm32-wasi Preview1)");
++	return FAILURE;
++}
++
++/* Remaining opcache symbols are dead code under WASI; stub them out */
++void accel_shutdown(void) {}
++int  accel_activate(INIT_FUNC_ARGS) { return SUCCESS; }
++void accel_deactivate(void) {}
++
++#else /* !__wasi__ — full OPcache implementation */
++
+ #define IN_SHMAT 0x01
+ #define ACCEL_PRODUCT_NAME "Zend OPcache"
+@@ -2891,6 +2905,8 @@ static int accel_startup(zend_extension *extension)
+ 	return SUCCESS;
+ }
+
++#endif /* __wasi__ */
++
+diff --git a/ext/opcache/jit/zend_jit.c b/ext/opcache/jit/zend_jit.c
+index abcdef1..234567a 100644
+--- a/ext/opcache/jit/zend_jit.c
++++ b/ext/opcache/jit/zend_jit.c
+@@ -29,6 +29,20 @@
+ #include "zend_smart_str.h"
+ #include "jit/zend_jit.h"
+
++#ifdef __wasi__
++/* JIT generates native machine code (x86/arm64) at runtime using mprotect
++ * and RWX mappings. Neither is available under WASI. Provide no-op stubs
++ * so the rest of opcache links cleanly. */
++int  zend_jit_startup(void *buf, size_t size, bool reattached) { return FAILURE; }
++void zend_jit_shutdown(void) {}
++int  zend_jit_op_array(zend_op_array *op_array, zend_script *script)
++     { (void)op_array; (void)script; return FAILURE; }
++int  zend_jit_script(zend_script *script) { (void)script; return FAILURE; }
++void zend_jit_deactivate(void) {}
++int  zend_jit_check_funcs(HashTable *function_table, bool is_method)
++     { (void)function_table; (void)is_method; return FAILURE; }
++
++#else /* !__wasi__ — full JIT implementation follows */
++
+diff --git a/ext/opcache/config.m4 b/ext/opcache/config.m4
+index 9876543..abcdef0 100644
+--- a/ext/opcache/config.m4
++++ b/ext/opcache/config.m4
+@@ -4,6 +4,15 @@ PHP_ARG_ENABLE([opcache],
+   [AS_HELP_STRING([--disable-opcache], [Disable Zend OPcache support])],
+   [yes])
+
++dnl Force-disable opcache for WASI (no MAP_SHARED mmap, no mprotect, no RWX)
++case "$host" in
++  wasm32-wasi*|wasm32-unknown-wasi*)
++    PHP_OPCACHE=no
++    AC_MSG_NOTICE([opcache: force-disabled for WASI (requires MAP_SHARED + mprotect)])
++    AC_DEFINE([ZEND_WIN32], [0], [not windows])
++    ;;
++esac
++
+ PHP_ARG_ENABLE([opcache-jit],

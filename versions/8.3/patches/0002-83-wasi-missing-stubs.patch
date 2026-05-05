@@ -1,0 +1,70 @@
+--- a/ext/standard/filestat.c
++++ b/ext/standard/filestat.c
+@@ -467,6 +467,7 @@
+ /* }}} */
+ #endif // __wasi__
+
++#ifndef __wasi__
+ static void php_do_chown(INTERNAL_FUNCTION_PARAMETERS, int do_lchown) /* {{{ */
+ {
+ 	char *filename;
+@@ -550,7 +551,6 @@
+ /* }}} */
+
+ /* {{{ Change file owner */
+-#ifndef __wasi__
+ PHP_FUNCTION(chown)
+ {
+   php_do_chown(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
+--- a/ext/standard/php_fopen_wrapper.c
++++ b/ext/standard/php_fopen_wrapper.c
+@@ -21,6 +21,10 @@
+ #ifdef HAVE_UNISTD_H
+ # include <unistd.h>
+ #endif
++#ifdef __wasi__
++#include <errno.h>
++static inline int dup(int fd) { (void)fd; errno = ENOSYS; return -1; }
++#endif
+
+ #include "php.h"
+ #include "php_globals.h"
+--- a/wasi/main/network.c
++++ b/wasi/main/network.c
+@@ -13,7 +13,36 @@
+  */
+
+ #include "php.h"
++#include "ext/standard/php_mail.h"
++#include <string.h>
++#include <errno.h>
+
+ PHPAPI void _php_emit_fd_setsize_warning(int max_fd)
+ {
+ }
++
++PHPAPI char *php_socket_strerror(long err, char *buf, size_t bufsize)
++{
++	char *errstr = strerror((int)err);
++	if (buf == NULL) {
++		buf = estrdup(errstr ? errstr : "Unknown error");
++	} else {
++		strncpy(buf, errstr ? errstr : "Unknown error", bufsize);
++		buf[bufsize ? (bufsize - 1) : 0] = 0;
++	}
++	return buf;
++}
++
++PHPAPI zend_string *php_socket_error_str(long err)
++{
++	char *errstr = strerror((int)err);
++	return zend_string_init(errstr ? errstr : "Unknown error",
++		errstr ? strlen(errstr) : 13, 0);
++}
++
++PHPAPI int php_mail(const char *to, const char *subject, const char *message,
++                    const char *headers, const char *extra_cmd)
++{
++	php_error_docref(NULL, E_WARNING, "mail() is not supported in WASM/WASI");
++	return 0;
++}

@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: php-wasm maintainers <maintainers@php-wasm>
+Date: Mon, 01 Jan 2024 00:00:00 +0000
+Subject: [PATCH] Fix property hooks vtable dispatch for WASI
+
+PHP 8.4 property hooks store accessor function pointers in a
+zend_property_hook struct. Under WASI with wasm32 addressing, function
+pointer tables (indirect call tables) require that all function pointers
+are populated at link time. Ensure the hook struct is zero-initialized
+to prevent indirection through uninitialised table entries.
+---
+ Zend/zend_object_handlers.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/Zend/zend_object_handlers.c b/Zend/zend_object_handlers.c
+index aabbcc1..ddeeff2 100644
+--- a/Zend/zend_object_handlers.c
++++ b/Zend/zend_object_handlers.c
+@@ -45,6 +45,18 @@
+ #include "zend_portability.h"
+ #include "zend_interfaces.h"
+
++#ifdef __wasi__
++/* wasm32 indirect call table requires all slots to be initialized.
++ * Zero-init ensures null checks before indirect calls work correctly.
++ * Without this, an uninitialized hook function pointer may index into
++ * the WASM element section at offset 0, calling an arbitrary function. */
++# define ZEND_PROPERTY_HOOK_INIT(hook) \
++	memset((hook), 0, sizeof(*(hook)))
++# define ZEND_PROPERTY_HOOK_ISSET(hook, field) \
++	((hook) != NULL && (hook)->field != NULL)
++#else
++# define ZEND_PROPERTY_HOOK_INIT(hook)         do {} while(0)
++# define ZEND_PROPERTY_HOOK_ISSET(hook, field) ((hook)->field != NULL)
++#endif /* __wasi__ */
++
+ static zend_always_inline uint32_t zend_normalized_index(

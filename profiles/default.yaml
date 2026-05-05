@@ -1,0 +1,39 @@
+# $schema: ../schemas/profile.schema.json
+name: "default"
+description: "Standard profile: core + common extensions for web apps"
+
+configure_flags:
+    - "--enable-mbstring"
+    - "--disable-mbregex"
+    - "--enable-ctype"
+    - "--enable-filter"
+    - "--enable-tokenizer"
+    - "--enable-bcmath"
+    - "--enable-calendar"
+    - "--enable-pdo"
+    - "--with-pdo-sqlite=deps/sqlite3-wasm"
+    - "--with-sqlite3=deps/sqlite3-wasm"
+
+extensions_snapshot:
+    - json
+    - mbstring
+    - ctype
+    - filter
+    - tokenizer
+    - bcmath
+    - calendar
+    - pdo
+    - pdo_sqlite
+    - sqlite3
+
+expected_wasm_size_kb: 5000
+
+notes: |
+    Extensions requiring pre-compiled WASM libraries are NOT included here:
+      - sqlite3 / pdo_sqlite: needs libsqlite3 cross-compiled for wasm32-wasi.
+        Run scripts/build-sqlite3.sh first, then add --with-sqlite3=<DEPS_DIR> and
+        --with-pdo-sqlite=<DEPS_DIR> to a custom profile.
+      - xml / dom / simplexml / xmlreader / xmlwriter: needs libxml2 cross-compiled
+        for wasm32-wasi. No automated build script yet.
+    mbstring uses bundled oniguruma; no external lib needed.
+    All extensions here are pure-C with no system library dependencies.

@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PHP WASM Playground</title>
+
+  <!-- CodeMirror 5 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #1e1e2e;
+      --surface:  #24273a;
+      --panel:    #2a2d3e;
+      --border:   #363a52;
+      --accent:   #89b4fa;
+      --green:    #a6e3a1;
+      --red:      #f38ba8;
+      --yellow:   #f9e2af;
+      --muted:    #6c7086;
+      --text:     #cdd6f4;
+      --subtext:  #a6adc8;
+      --font-ui:  system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 14px; }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      user-select: none;
+    }
+    header .logo { font-size: 22px; }
+    header h1 { font-size: 16px; font-weight: 600; color: var(--text); }
+    header .tagline { font-size: 12px; color: var(--muted); margin-left: 4px; }
+    header .badges { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+    .badge {
+      font-size: 11px; font-family: var(--font-mono);
+      padding: 2px 8px; border-radius: 999px;
+      background: var(--panel); border: 1px solid var(--border); color: var(--subtext);
+    }
+    .badge.green  { color: var(--green);  border-color: var(--green); }
+    .badge.blue   { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Main layout ─────────────────────────────────────────── */
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto 1fr;
+      height: calc(100vh - 48px);
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────────── */
+    .toolbar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .toolbar label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+    select, button {
+      font-family: var(--font-ui);
+      font-size: 13px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      outline: none;
+      cursor: pointer;
+    }
+    select {
+      padding: 5px 10px;
+      background: var(--panel);
+      color: var(--text);
+      appearance: none;
+      -webkit-appearance: none;
+      padding-right: 28px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236c7086' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+    }
+    select:focus { border-color: var(--accent); }
+
+    #run-btn {
+      padding: 6px 18px;
+      background: var(--accent);
+      color: #1e1e2e;
+      border: none;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: opacity .15s, transform .1s;
+    }
+    #run-btn:hover { opacity: .9; }
+    #run-btn:active { transform: scale(.97); }
+    #run-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    #run-btn kbd {
+      font-size: 10px; font-family: var(--font-mono);
+      background: rgba(0,0,0,.2);
+      border-radius: 3px; padding: 1px 4px;
+      border: 1px solid rgba(0,0,0,.3);
+    }
+
+    #run-btn .spinner {
+      display: none;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(0,0,0,.3);
+      border-top-color: #1e1e2e;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    #run-btn.loading .spinner { display: block; }
+    #run-btn.loading .run-icon { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toolbar-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+
+    /* ── Editor panel ────────────────────────────────────────── */
+    .editor-panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .panel-header strong { color: var(--subtext); font-weight: 500; }
+
+    .CodeMirror {
+      height: 100% !important;
+      font-family: var(--font-mono) !important;
+      font-size: 13.5px !important;
+      line-height: 1.6 !important;
+    }
+    .CodeMirror-scroll { height: 100%; }
+    .editor-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .editor-wrap .CodeMirror { flex: 1; }
+
+    /* ── Output panel ────────────────────────────────────────── */
+    .output-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .output-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #timing {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    #output-wrap {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      background: var(--bg);
+    }
+    #output {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text);
+    }
+    #output.has-error { color: var(--red); }
+
+    .output-placeholder {
+      color: var(--muted);
+      font-size: 13px;
+      font-style: italic;
+      padding: 12px 0;
+    }
+
+    .error-box {
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: rgba(243,139,168,.1);
+      border: 1px solid rgba(243,139,168,.35);
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--red);
+    }
+
+    /* ── Footer ─────────────────────────────────────────────── */
+    footer {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    footer details { padding: 0; }
+    footer summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 16px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    footer summary::-webkit-details-marker { display: none; }
+    footer summary::before { content: "▶"; font-size: 9px; transition: transform .15s; }
+    footer details[open] summary::before { transform: rotate(90deg); }
+
+    .limitations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 8px;
+      padding: 0 16px 12px;
+    }
+    .limit-item {
+      font-size: 12px;
+      color: var(--subtext);
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+    .limit-item .icon { flex-shrink: 0; }
+    .limit-item .icon.ok  { color: var(--green); }
+    .limit-item .icon.no  { color: var(--red); }
+    .limit-item .icon.meh { color: var(--yellow); }
+
+    /* ── Profile info sidebar ────────────────────────────────── */
+    #profile-info {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    /* ── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      main { grid-template-columns: 1fr; grid-template-rows: auto 45vh 45vh; }
+      .editor-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <span class="logo">🐘</span>
+  <h1>PHP WASM Playground</h1>
+  <span class="tagline">— run real PHP in-process via wasm32-wasi + wazero</span>
+  <div class="badges">
+    <span class="badge blue" id="php-version-badge">PHP/WASM</span>
+    <span class="badge green">WASI Preview1</span>
+    <span class="badge">wazero</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <label for="examples-sel">Example</label>
+    <select id="examples-sel" title="Load a code example"></select>
+
+    <div class="toolbar-sep"></div>
+
+    <label for="profile-sel">Profile</label>
+    <select id="profile-sel" title="PHP build profile"></select>
+    <span id="profile-info"></span>
+
+    <div class="toolbar-sep"></div>
+
+    <button id="run-btn" title="Run code (Ctrl+Enter)">
+      <span class="run-icon">▶ Run</span>
+      <span class="spinner"></span>
+      <kbd>Ctrl+↵</kbd>
+    </button>
+  </div>
+
+  <!-- Editor -->
+  <div class="editor-panel">
+    <div class="panel-header">
+      <strong>editor</strong>
+      <span>PHP · wasm32-wasi</span>
+    </div>
+    <div class="editor-wrap">
+      <textarea id="code-area"></textarea>
+    </div>
+  </div>
+
+  <!-- Output -->
+  <div class="output-panel">
+    <div class="panel-header">
+      <strong>output</strong>
+      <div class="output-meta">
+        <span id="timing"></span>
+      </div>
+    </div>
+    <div id="output-wrap">
+      <div class="output-placeholder" id="placeholder">Press ▶ Run (or Ctrl+Enter) to execute your PHP code.</div>
+      <pre id="output"></pre>
+    </div>
+  </div>
+
+  <!-- WASI Limitations footer -->
+  <footer>
+    <details>
+      <summary>WASI Preview1 limitations &amp; available features</summary>
+      <div class="limitations-grid">
+        <div class="limit-item"><span class="icon ok">✓</span><span>Core PHP &amp; all standard library functions</span></div>
+        <div class="limit-item"><span class="icon ok">✓</span><span>JSON encode / decode</span></div>
+        <div class="limit-item"><span class="icon ok">✓</span><span>mbstring (Unicode, multibyte)</span></div>
+        <div class="limit-item"><span class="icon ok">✓</span><span>PDO + SQLite (in-memory)</span></div>
+        <div class="limit-item"><span class="icon ok">✓</span><span>bcmath, calendar, tokenizer</span></div>
+        <div class="limit-item"><span class="icon ok">✓</span><span>Closures, generators, fibers API stub</span></div>
+        <div class="limit-item"><span class="icon ok">✓</span><span>Date/time (system clock available)</span></div>
+        <div class="limit-item"><span class="icon ok">✓</span><span>Filesystem reads/writes to /tmp</span></div>
+        <div class="limit-item"><span class="icon no">✗</span><span>Networking (TCP/UDP) — no WASI socket API</span></div>
+        <div class="limit-item"><span class="icon no">✗</span><span>Fibers / coroutines — no ucontext in WASM</span></div>
+        <div class="limit-item"><span class="icon no">✗</span><span>fork / popen / proc_open — stubbed as ENOSYS</span></div>
+        <div class="limit-item"><span class="icon no">✗</span><span>Opcache / JIT — no RWX memory in WASM</span></div>
+        <div class="limit-item"><span class="icon no">✗</span><span>Threads (pthreads / parallel)</span></div>
+        <div class="limit-item"><span class="icon meh">~</span><span>Extensions vary by profile (minimal / default / full)</span></div>
+      </div>
+    </details>
+  </footer>
+
+</main>
+
+<!-- CodeMirror 5 + PHP mode -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/php/php.min.js"></script>
+
+<script>
+// ── Examples ────────────────────────────────────────────────────────────────
+const EXAMPLES = [
+  {
+    label: "Hello World",
+    profile: "minimal",
+    code: `<?php
+echo "Hello from PHP " . PHP_VERSION . " (wasm32-wasi)!\\n";
+echo "OS:   " . PHP_OS . "\\n";
+echo "SAPI: " . php_sapi_name() . "\\n";
+echo "INT_MAX: " . PHP_INT_MAX . "\\n";
+echo "Today: " . date('Y-m-d H:i:s') . "\\n";
+`
+  },
+  {
+    label: "JSON & Arrays",
+    profile: "minimal",
+    code: `<?php
+// Encode
+$data = [
+    'engine'   => 'wazero',
+    'runtime'  => 'wasm32-wasi',
+    'php'      => PHP_VERSION,
+    'features' => ['json', 'closures', 'generators'],
+    'limits'   => (object)['network' => false, 'threads' => false],
+];
+echo json_encode($data, JSON_PRETTY_PRINT) . "\\n\\n";
+
+// Decode
+$raw = '{"hello":"world","primes":[2,3,5,7,11,13]}';
+$obj = json_decode($raw);
+echo $obj->hello . "\\n";
+echo "Primes: " . implode(', ', $obj->primes) . "\\n";
+`
+  },
+  {
+    label: "Closures & Generators",
+    profile: "minimal",
+    code: `<?php
+// Fibonacci generator
+function fibonacci(): Generator {
+    [$a, $b] = [0, 1];
+    while (true) {
+        yield $a;
+        [$a, $b] = [$b, $a + $b];
+    }
+}
+
+$gen = fibonacci();
+$fibs = [];
+for ($i = 0; $i < 12; $i++) {
+    $fibs[] = $gen->current();
+    $gen->next();
+}
+echo "Fibonacci: " . implode(', ', $fibs) . "\\n\\n";
+
+// Higher-order functions
+$words = ["wasm", "wasi", "php", "wazero", "webassembly"];
+$result = array_map(
+    fn($w) => strtoupper($w) . " (" . strlen($w) . ")",
+    array_filter($words, fn($w) => strlen($w) > 4)
+);
+array_walk($result, fn($v) => print("  $v\\n"));
+`
+  },
+  {
+    label: "mbstring (Unicode)",
+    profile: "default",
+    code: `<?php
+// Requires: default or full profile
+
+$texts = [
+    "Hello, 🌍 World!",
+    "日本語テスト",
+    "Héllo Wörld — Ünïcödé",
+    "Ελληνικά",
+    "中文测试 🐘",
+];
+
+foreach ($texts as $t) {
+    $bytes = strlen($t);
+    $chars = mb_strlen($t, 'UTF-8');
+    $upper = mb_strtoupper($t, 'UTF-8');
+    printf("%-30s  bytes=%-4d  chars=%-4d  upper=%s\\n",
+        $t, $bytes, $chars, $upper);
+}
+
+echo "\\nmb_substr: " . mb_substr("Hello, World!", 7, 5, 'UTF-8') . "\\n";
+echo "mb_strpos: " . mb_strpos("Hello, World!", "World", 0, 'UTF-8') . "\\n";
+`
+  },
+  {
+    label: "SQLite (PDO)",
+    profile: "default",
+    code: `<?php
+// Requires: default or full profile
+
+$db = new PDO('sqlite::memory:', null, null, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+]);
+
+$db->exec('CREATE TABLE products (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    price REAL,
+    stock INTEGER
+)');
+
+$stmt = $db->prepare(
+    'INSERT INTO products (name, price, stock) VALUES (?, ?, ?)'
+);
+foreach ([
+    ['Widget A', 9.99,  42],
+    ['Widget B', 19.49, 17],
+    ['Gadget X', 49.00,  5],
+    ['Gadget Y', 99.95,  0],
+] as [$name, $price, $stock]) {
+    $stmt->execute([$name, $price, $stock]);
+}
+
+echo "In-stock products (sorted by price):\\n";
+$rows = $db->query(
+    'SELECT name, price, stock FROM products WHERE stock > 0 ORDER BY price'
+);
+foreach ($rows as $row) {
+    printf("  %-12s $%6.2f  (stock: %d)\\n",
+        $row['name'], $row['price'], $row['stock']);
+}
+
+$total = $db->query('SELECT SUM(price * stock) FROM products')->fetchColumn();
+printf("\\nTotal inventory value: $%.2f\\n", $total);
+`
+  },
+  {
+    label: "BCMath (Big Numbers)",
+    profile: "default",
+    code: `<?php
+// Requires: default or full profile
+
+$a = '99999999999999999999999999999';
+$b = '11111111111111111111111111111';
+
+echo "a = $a\\n";
+echo "b = $b\\n\\n";
+echo "a + b = " . bcadd($a, $b) . "\\n";
+echo "a - b = " . bcsub($a, $b) . "\\n";
+echo "a * b = " . bcmul($a, $b) . "\\n";
+echo "a / b = " . bcdiv($a, $b, 20) . "\\n";
+echo "a % b = " . bcmod($a, $b) . "\\n";
+echo "sqrt(a) = " . bcsqrt($a, 10) . "\\n";
+
+// Pi approximation via Machin's formula (Leibniz series)
+echo "\\nPI ≈ ";
+$pi = '0';
+$sign = 1;
+for ($k = 0; $k < 500; $k++) {
+    $term = bcdiv((string)$sign, (string)(2*$k+1), 40);
+    $pi   = bcadd($pi, $term, 40);
+    $sign *= -1;
+}
+echo bcmul($pi, '4', 30) . "\\n";
+`
+  },
+  {
+    label: "Filesystem (/tmp)",
+    profile: "minimal",
+    code: `<?php
+// WASI pre-opens /tmp — write and read files there.
+
+$path = '/tmp/hello-wasm.txt';
+file_put_contents($path, "Written from PHP running in wasm32-wasi!\\n");
+echo file_get_contents($path);
+
+// Temp file
+$tmp = tempnam('/tmp', 'php_wasm_');
+file_put_contents($tmp, json_encode(['ts' => time(), 'rnd' => rand()]));
+echo "tempnam: " . basename($tmp) . " — " . file_get_contents($tmp) . "\\n";
+
+// Directory listing
+echo "\\n/tmp contents:\\n";
+foreach (glob('/tmp/*') as $f) {
+    printf("  %-40s %d bytes\\n", basename($f), filesize($f));
+}
+`
+  },
+];
+
+// ── CodeMirror setup ─────────────────────────────────────────────────────────
+const editor = CodeMirror.fromTextArea(document.getElementById('code-area'), {
+  mode: 'application/x-httpd-php',
+  theme: 'dracula',
+  lineNumbers: true,
+  matchBrackets: true,
+  indentUnit: 4,
+  tabSize: 4,
+  indentWithTabs: false,
+  autofocus: true,
+  lineWrapping: false,
+  extraKeys: {
+    'Ctrl-Enter': runCode,
+    'Cmd-Enter':  runCode,
+    'Tab': (cm) => {
+      if (cm.somethingSelected()) cm.indentSelection('add');
+      else cm.replaceSelection('    ', 'end');
+    },
+  },
+});
+
+// Force CodeMirror to fill its container
+setTimeout(() => editor.refresh(), 100);
+
+// ── Profile selector ─────────────────────────────────────────────────────────
+const profileSel = document.getElementById('profile-sel');
+const profileInfo = document.getElementById('profile-info');
+
+const PROFILE_NOTES = {
+  minimal: 'core · json · tokenizer · ctype · filter',
+  default: '+ mbstring · pdo_sqlite · bcmath · calendar',
+  full:    '+ gd · zip · openssl · exif · fileinfo',
+};
+
+async function loadProfiles() {
+  try {
+    const res = await fetch('/api/profiles');
+    const profiles = await res.json();
+    profileSel.innerHTML = '';
+    profiles.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      profileSel.appendChild(opt);
+    });
+    updateProfileInfo();
+  } catch (e) {
+    profileSel.innerHTML = '<option value="minimal">minimal</option>';
+  }
+}
+
+function updateProfileInfo() {
+  const p = profileSel.value;
+  profileInfo.textContent = PROFILE_NOTES[p] || '';
+}
+profileSel.addEventListener('change', updateProfileInfo);
+
+// ── Examples selector ─────────────────────────────────────────────────────────
+const exSel = document.getElementById('examples-sel');
+
+EXAMPLES.forEach((ex, i) => {
+  const opt = document.createElement('option');
+  opt.value = i;
+  opt.textContent = ex.label;
+  exSel.appendChild(opt);
+});
+
+exSel.addEventListener('change', () => {
+  const ex = EXAMPLES[+exSel.value];
+  if (!ex) return;
+  editor.setValue(ex.code.trimStart());
+  // Switch to the example's preferred profile if it's available
+  const options = [...profileSel.options].map(o => o.value);
+  if (options.includes(ex.profile)) profileSel.value = ex.profile;
+  updateProfileInfo();
+  editor.focus();
+  clearOutput();
+});
+
+// Load first example
+editor.setValue(EXAMPLES[0].code.trimStart());
+
+// ── Run ──────────────────────────────────────────────────────────────────────
+const runBtn     = document.getElementById('run-btn');
+const outputEl   = document.getElementById('output');
+const timingEl   = document.getElementById('timing');
+const placeholder = document.getElementById('placeholder');
+const phpBadge   = document.getElementById('php-version-badge');
+
+function clearOutput() {
+  outputEl.textContent = '';
+  outputEl.className   = '';
+  timingEl.textContent = '';
+  placeholder.style.display = 'block';
+}
+
+async function runCode() {
+  const code    = editor.getValue();
+  const profile = profileSel.value;
+  if (!code.trim()) return;
+
+  runBtn.disabled = true;
+  runBtn.classList.add('loading');
+  placeholder.style.display = 'none';
+  outputEl.textContent = '';
+  outputEl.className   = '';
+  timingEl.textContent = '';
+
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, profile }),
+    });
+
+    if (!res.ok) {
+      const msg = await res.text();
+      showError(`Server error ${res.status}: ${msg}`);
+      return;
+    }
+
+    const data = await res.json();
+
+    timingEl.textContent = `${data.elapsed_ms} ms`;
+
+    if (data.output) {
+      outputEl.textContent = data.output;
+      // Detect PHP version from output for the badge
+      const m = data.output.match(/PHP (\d+\.\d+\.\d+)/);
+      if (m) phpBadge.textContent = 'PHP ' + m[1];
+    }
+
+    if (data.error) {
+      const box = document.createElement('div');
+      box.className = 'error-box';
+      box.textContent = '⚠ ' + data.error;
+      document.getElementById('output-wrap').appendChild(box);
+      if (!data.output) outputEl.classList.add('has-error');
+    }
+
+    if (!data.output && !data.error) {
+      outputEl.textContent = '(no output)';
+      outputEl.style.color = 'var(--muted)';
+    }
+
+  } catch (e) {
+    showError('Network error: ' + e.message);
+  } finally {
+    runBtn.disabled = false;
+    runBtn.classList.remove('loading');
+  }
+}
+
+function showError(msg) {
+  placeholder.style.display = 'none';
+  outputEl.textContent = msg;
+  outputEl.classList.add('has-error');
+}
+
+runBtn.addEventListener('click', runCode);
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+loadProfiles();
+</script>
+
+</body>
+</html>

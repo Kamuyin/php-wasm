@@ -1,0 +1,35 @@
+# $schema: ../../schemas/config.schema.json
+php_version: "8.4.20"
+source_tag: "php-8.4.20"
+source_sha256: "a2def5d534d57c6a0236f2265de7537608af871900a4f7955eff463e9e38247d"
+
+# Configure flags validated against VMware WasmLabs wlr-build.sh.
+configure_extra:
+  - "--disable-all"
+  - "--enable-cgi"
+  - "--disable-zend-signals"
+  - "--disable-fiber-asm"
+  - "--disable-opcache"
+  - "--disable-phpdbg"
+  - "--without-pear"
+  - "--without-iconv"
+  - "--without-openssl"
+  - "--without-pcre-jit"
+
+# No common patches — the version-specific patch 0001 is the comprehensive
+# VMware WasmLabs initial WASI port.
+common_patches: []
+
+# Version-specific WASI patches for PHP 8.4.
+# 0001: initial WASI port (VMware WasmLabs master branch, forward-ported to 8.4)
+# 0002: property hooks vtable zero-init for wasm32 indirect call tables (8.4-specific)
+# 0003: new-without-parens syntax adjustment for WASI (8.4-specific)
+version_patches:
+  - "0001-wasi-initial-port"
+  - "0002-84-property-hooks-wasi"
+  - "0003-84-new-without-parens"
+
+notes: |
+  PHP 8.4 introduces property hooks and asymmetric visibility.
+  Patch 0001 is forward-ported from VMware master; patches 0002-0003 are 8.4-specific.
+  Validate against upstream object-handler and compiler internals when upgrading.

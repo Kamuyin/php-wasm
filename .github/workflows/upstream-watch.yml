@@ -1,0 +1,107 @@
+name: Upstream Watch
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_issue:
+        description: 'Create issue even if versions are current'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check-upstream:
+    name: Check PHP Upstream Releases
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create labels if missing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "upstream-update" \
+            --color "0075ca" \
+            --description "New PHP upstream release available" \
+            --repo "${{ github.repository }}" || true
+          gh label create "automated" \
+            --color "e4e669" \
+            --description "Created by an automated process" \
+            --repo "${{ github.repository }}" || true
+        continue-on-error: true
+
+      - name: Check for existing open upstream issues
+        id: check-existing
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COUNT=$(gh issue list \
+            --label "upstream-update" \
+            --state open \
+            --json number \
+            --repo "${{ github.repository }}" \
+            --jq 'length')
+          echo "open_count=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Open upstream-update issues: ${COUNT}"
+
+      - name: Check PHP upstream releases
+        id: check-upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          chmod +x scripts/check-upstream.sh
+
+          # Run without --create-issue to just check
+          set +e
+          ./scripts/check-upstream.sh
+          EXIT_CODE=$?
+          set -e
+
+          if [[ "${EXIT_CODE}" -eq 0 ]]; then
+            echo "updates_available=false" >> "$GITHUB_OUTPUT"
+            echo "No updates available."
+          else
+            echo "updates_available=true" >> "$GITHUB_OUTPUT"
+            echo "Updates are available!"
+          fi
+
+      - name: Create GitHub issue for updates
+        if: |
+          steps.check-upstream.outputs.updates_available == 'true' &&
+          steps.check-existing.outputs.open_count == '0'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          ./scripts/check-upstream.sh --create-issue || true
+
+      - name: Write job summary
+        run: |
+          echo "## Upstream Watch — $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.check-upstream.outputs.updates_available }}" == "true" ]]; then
+            echo "**Status: Updates available**" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "${{ steps.check-existing.outputs.open_count }}" == "0" ]]; then
+              echo "A new GitHub issue has been created." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "An upstream-update issue is already open; skipped creation." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "**Status: All tracked versions are up to date.**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tracked versions:" >> "$GITHUB_STEP_SUMMARY"
+          for f in versions/*/source.yaml; do
+            v=$(grep 'php_version:' "$f" | sed 's/php_version: *"//' | sed 's/"//'); \
+            echo "- \`${v}\`" >> "$GITHUB_STEP_SUMMARY"
+          done

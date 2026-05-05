@@ -1,0 +1,21 @@
+# $schema: ../schemas/profile.schema.json
+name: "minimal"
+description: "Minimal profile: PHP core + json + tokenizer only. Smallest possible binary."
+
+configure_flags:
+  - "--enable-tokenizer"
+  - "--enable-ctype"
+  - "--enable-filter"
+
+extensions_snapshot:
+  - json
+  - tokenizer
+  - ctype
+  - filter
+
+expected_wasm_size_kb: 3200
+
+notes: |
+  Suitable for template rendering, JSON processing, and basic scripting.
+  No database access, no mbstring, no XML.
+  Use this profile for lambda-style functions where binary size matters most.

@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: php-wasm maintainers <maintainers@php-wasm>
+Date: Mon, 01 Jan 2024 00:00:00 +0000
+Subject: [PATCH 8/8] Add -wasi suffix to PHP version string
+
+Adds "-wasi" as PHP_EXTRA_VERSION so that phpversion(), PHP_VERSION,
+and phpinfo() clearly identify binaries as WASI builds. This helps
+consumers distinguish native from WASM PHP when inspecting User-Agent
+headers, error logs, or version checks.
+
+The CGI SAPI name is overridden to "wasi-cgi" so that php_sapi_name()
+returns a WASI-specific identifier that application code can test.
+
+A PHP_WASM_TARGET server variable is injected so $_SERVER contains
+the WASM target triple for introspection.
+---
+ configure.ac        |  9 +++++++++
+ main/main.c         | 14 ++++++++++++++
+ sapi/cgi/cgi_main.c |  6 ++++++
+ 3 files changed, 29 insertions(+)
+
+diff --git a/configure.ac b/configure.ac
+index a6b7c8d..b9cade0 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -29,6 +29,15 @@ m4_include([build/php.m4])
+
++dnl Set -wasi version suffix for WASI builds
+ case "$host" in
+   wasm32-wasi*|wasm32-unknown-wasi*)
++    if test -z "$PHP_EXTRA_VERSION"; then
++      PHP_EXTRA_VERSION="-wasi"
++    fi
++    AC_DEFINE_UNQUOTED([PHP_WASM_PROFILE_NAME],
++      ["${PHP_WASM_PROFILE:-unknown}"],
++      [Build profile: minimal/default/full/honeypot])
++    AC_MSG_NOTICE([php-wasm: version suffix set to '${PHP_EXTRA_VERSION}'])
+     ;;
+ esac
+diff --git a/main/main.c b/main/main.c
+index a1b2c3d..e4f5a6b 100644
+--- a/main/main.c
++++ b/main/main.c
+@@ -78,6 +78,18 @@
+ #include "SAPI.h"
+ #include "rfc1867.h"
+
++#ifdef __wasi__
++/* Provide a clear identifier in phpinfo() and Server: header for WASM builds.
++ * Consumers can detect WASM with: php_sapi_name() === 'wasi-cgi' */
++# ifndef PHP_EXTRA_VERSION
++#  define PHP_EXTRA_VERSION "-wasi"
++# endif
++
++static const char php_wasm_target[]  = "wasm32-wasi";
++static const char php_wasm_profile[] = PHP_WASM_PROFILE_NAME;
++#endif /* __wasi__ */
++
+ #if PHP_SIGCHILD
+ # include <sys/types.h>
+ # include <sys/wait.h>
+@@ -1823,6 +1835,8 @@ static void php_register_server_variables(void)
+ 	if (SG(request_info).request_uri) {
+ 		register_variable("PHP_SELF", SG(request_info).request_uri);
+ 	}
++#ifdef __wasi__
++	register_variable("PHP_WASM_TARGET",  php_wasm_target);
++	register_variable("PHP_WASM_PROFILE", php_wasm_profile);
++#endif
+ }
+diff --git a/sapi/cgi/cgi_main.c b/sapi/cgi/cgi_main.c
+index c6d7e8f..d8e9f10 100644
+--- a/sapi/cgi/cgi_main.c
++++ b/sapi/cgi/cgi_main.c
+@@ -812,7 +812,13 @@ static sapi_module_struct cgi_sapi_module = {
++#ifdef __wasi__
++	"wasi-cgi",                     /* name — returned by php_sapi_name() */
++	"CGI/WASI (wasm32-wasi)",       /* pretty_name — shown in phpinfo() */
++#else
+ 	"cgi-fcgi",                     /* name */
+ 	"CGI/FastCGI",                  /* pretty name */
++#endif
+
+ 	php_cgi_startup,                /* startup */
+ 	php_module_shutdown_wrapper,    /* shutdown */
