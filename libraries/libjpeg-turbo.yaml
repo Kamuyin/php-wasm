@@ -1,0 +1,8 @@
+name: libjpeg-turbo
+version: "3.0.4"
+source_url: "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.4/libjpeg-turbo-3.0.4.tar.gz"
+source_sha256: ""
+source_format: "tar.gz"
+source_dir: "libjpeg-turbo-3.0.4"
+output_dir: "libjpeg-wasm"
+build_type: "cmake"

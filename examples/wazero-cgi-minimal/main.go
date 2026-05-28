@@ -1,11 +1,5 @@
 // wazero-cgi-minimal: minimal HTTP server that serves PHP scripts via php-cgi WASM.
-//
-// Usage:
-//
-//	go run main.go --wasm php.wasm --docroot ./www --addr :8080
-//
-// The server compiles php-cgi.wasm once at startup, then instantiates a fresh
-// module per request — isolating request state while amortizing compilation cost.
+// Compiles the WASM module once at startup, instantiates a fresh module per request.
 package main
 
 import (
@@ -22,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/php-wasm/examples/cgi"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"github.com/tetratelabs/wazero/sys"
@@ -201,7 +196,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse CGI response headers + body
-	writeCGIResponse(w, stdout.String(), requestID)
+	cgi.WriteCGIResponse(w, stdout.String(), requestID)
 }
 
 // buildCGIEnv builds CGI/1.1 environment variables from an HTTP request.
@@ -254,54 +249,3 @@ func buildCGIEnv(r *http.Request, scriptPath, docroot string, contentLength int,
 	return env
 }
 
-// writeCGIResponse parses the CGI output (headers + body) and writes to the HTTP response.
-func writeCGIResponse(w http.ResponseWriter, response, requestID string) {
-	// Split headers from body at \r\n\r\n or \n\n
-	headerEnd := strings.Index(response, "\r\n\r\n")
-	bodyOffset := 4
-	if headerEnd < 0 {
-		headerEnd = strings.Index(response, "\n\n")
-		bodyOffset = 2
-	}
-
-	if headerEnd < 0 {
-		// No headers found; output raw content
-		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, response)
-		return
-	}
-
-	headerSection := response[:headerEnd]
-	body := response[headerEnd+bodyOffset:]
-
-	// Parse CGI headers
-	statusCode := http.StatusOK
-	for _, line := range strings.Split(headerSection, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if line == "" {
-			continue
-		}
-		colonIdx := strings.Index(line, ":")
-		if colonIdx < 0 {
-			continue
-		}
-		name := strings.TrimSpace(line[:colonIdx])
-		value := strings.TrimSpace(line[colonIdx+1:])
-
-		switch strings.ToLower(name) {
-		case "status":
-			// "Status: 404 Not Found"
-			if code, err := strconv.Atoi(strings.SplitN(value, " ", 2)[0]); err == nil {
-				statusCode = code
-			}
-		case "content-type":
-			w.Header().Set("Content-Type", value)
-		default:
-			w.Header().Set(name, value)
-		}
-	}
-
-	w.Header().Set("X-Request-ID", requestID)
-	w.WriteHeader(statusCode)
-	io.WriteString(w, body)
-}

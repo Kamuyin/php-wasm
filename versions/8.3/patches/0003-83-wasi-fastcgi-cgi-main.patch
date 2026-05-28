@@ -1,0 +1,59 @@
+--- a/sapi/cgi/cgi_main.c
++++ b/sapi/cgi/cgi_main.c
+@@ -1927,8 +1927,8 @@
+ 	fcgi_set_logger(fcgi_log);
+ #endif
+ 
+-#ifndef __wasi__
+ 	if (bindpath) {
++#ifndef __wasi__
+ 		int backlog = 128;
+ 		if (getenv("PHP_FCGI_BACKLOG")) {
+ 			backlog = atoi(getenv("PHP_FCGI_BACKLOG"));
+@@ -1941,15 +1941,17 @@
+ #endif
+ 			return FAILURE;
+ 		}
+-		fastcgi = fcgi_is_fastcgi();
++#else
++		fprintf(stderr, "FastCGI bind/listen sockets are not supported on WASI\n");
++		return FAILURE;
++#endif
+ 	}
+-#endif // __wasi__
++	fastcgi = fcgi_is_fastcgi();
+ 
+ 	/* make php call us to get _ENV vars */
+ 	php_php_import_environment_variables = php_import_environment_variables;
+ 	php_import_environment_variables = cgi_php_import_environment_variables;
+ 
+-#ifndef __wasi__
+ 	if (fastcgi) {
+ 		/* How many times to run PHP scripts before dying */
+ 		if (getenv("PHP_FCGI_MAX_REQUESTS")) {
+@@ -2085,7 +2087,7 @@
+ 			zend_signal_init();
+ 		}
+ 
+-#else
++#elif defined(PHP_WIN32)
+ 		if (children) {
+ 			wchar_t *cmd_line_tmp, cmd_line[PHP_WIN32_IOUTIL_MAXPATHLEN];
+ 			size_t cmd_line_len;
+@@ -2218,9 +2220,15 @@
+ 		} else {
+ 			parent = 0;
+ 		}
++#else
++		if (children) {
++			fprintf(stderr, "PHP_FCGI_CHILDREN is not supported on WASI\n");
++			return FAILURE;
++		} else {
++			parent = 0;
++		}
+ #endif /* WIN32 */
+ 	}
+-#endif // __wasi__
+ 
+ 	zend_first_try {
+ 		while (!skip_getopt && (c = php_getopt(argc, argv, OPTIONS, &php_optarg, &php_optind, 1, 2)) != -1) {

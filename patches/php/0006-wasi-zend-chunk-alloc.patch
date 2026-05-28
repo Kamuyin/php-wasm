@@ -1,0 +1,65 @@
+diff --git a/Zend/zend_alloc.c b/Zend/zend_alloc.c
+--- a/Zend/zend_alloc.c
++++ b/Zend/zend_alloc.c
+@@ -716,6 +716,19 @@
+ 
+ static void *zend_mm_chunk_alloc_int(size_t size, size_t alignment)
+ {
++#ifdef __wasi__
++	/* WASI: mmap() is malloc-backed (_WASI_EMULATED_MMAN). Sub-region munmap()
++	 * returns EINVAL on non-base pointers, corrupting the heap. Use aligned_alloc()
++	 * so the 2M-aligned chunk can be freed cleanly with free(). */
++	void *ptr = aligned_alloc(alignment, size);
++	if (ptr == NULL) {
++		return NULL;
++	}
++	if (zend_mm_use_huge_pages) {
++		zend_mm_hugepage(ptr, size);
++	}
++	return ptr;
++#else
+ 	void *ptr = zend_mm_mmap(size);
+ 
+ 	if (ptr == NULL) {
+@@ -766,6 +779,7 @@
+ #endif
+ 		return ptr;
+ 	}
++#endif
+ }
+ 
+ static void *zend_mm_chunk_alloc(zend_mm_heap *heap, size_t size, size_t alignment)
+@@ -788,7 +802,11 @@
+ 		return;
+ 	}
+ #endif
++#ifdef __wasi__
++	free(addr);
++#else
+ 	zend_mm_munmap(addr, size);
++#endif
+ }
+ 
+ static int zend_mm_chunk_truncate(zend_mm_heap *heap, void *addr, size_t old_size, size_t new_size)
+@@ -802,7 +820,9 @@
+ 		}
+ 	}
+ #endif
+-#ifndef _WIN32
++#ifdef __wasi__
++	return 0; /* aligned_alloc chunks cannot be partially freed */
++#elif !defined(_WIN32)
+ 	zend_mm_munmap((char*)addr + new_size, old_size - new_size);
+ 	return 1;
+ #else
+@@ -821,7 +841,9 @@
+ 		}
+ 	}
+ #endif
+-#ifdef HAVE_MREMAP
++#ifdef __wasi__
++	return 0; /* aligned_alloc chunks cannot be extended in-place */
++#elif defined(HAVE_MREMAP)
+ 	/* We don't use MREMAP_MAYMOVE due to alignment requirements. */
+ 	void *ptr = mremap(addr, old_size, new_size, 0);
+ 	if (ptr == MAP_FAILED) {

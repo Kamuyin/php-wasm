@@ -3,18 +3,6 @@ php_version: "8.2.30"
 source_tag: "php-8.2.30"
 source_sha256: "a0fa6673ba4b0c8335fbab08afb7c2e13a3791f2b5a0928c7ad3d7ad872edf26"
 
-# Configure flags validated against VMware WasmLabs wlr-build.sh for PHP 8.2.6.
-# --disable-all            : start from a clean slate; profiles add extensions
-# --enable-cgi             : build the php-cgi binary (the WASM artifact)
-# --disable-zend-signals   : WASI has no POSIX signal support
-# --disable-fiber-asm      : no ucontext on wasm32-wasi; WASI patch stubs it
-# --disable-opcache        : requires MAP_SHARED mmap + RWX pages (unavailable)
-# --disable-phpdbg         : debugger binary not relevant for WASM
-# --without-pear           : PEAR requires network/fork (unavailable)
-# --without-iconv          : wasi-libc has no iconv; use mbstring instead
-# --without-openssl        : OpenSSL requires OS entropy + syscalls; stub later
-# --without-pcre-jit       : PCRE JIT generates native code (no RWX in wasm)
-# --disable-phar           : phar uses streams not compatible with wasi-preview1
 configure_extra:
   - "--disable-all"
   - "--enable-cgi"
@@ -27,16 +15,19 @@ configure_extra:
   - "--without-openssl"
   - "--without-pcre-jit"
 
-# No common patches — the version-specific patch 0001 is the comprehensive
-# VMware WasmLabs initial WASI port (webassembly-language-runtimes/php/v8.2.6).
-# It patches all necessary files (Zend/, main/, ext/standard/, configure.ac).
-common_patches: []
+php_patches:
+  - "0001-wasi-session-uid-stub"
+  - "0002-wasi-csprng"
+  - "0003-wasi-gd-syslog-tmpfile"
+  - "0004-wasi-opcache-mmap-anon"
+  - "0005-wasi-zend-madvise"
+  - "0006-wasi-zend-chunk-alloc"
+  - "0007-wasi-fcgi-stdin-stdout"
 
-# Version-specific WASI patches for PHP 8.2.
-# 0001: initial WASI port (VMware WasmLabs v8.2.6, patch 01/18)
-# 0002: incapacitate fibers for WASI (VMware WasmLabs v8.2.6, patch 02/18)
+# 0001: VMware WasmLabs v8.2.6 comprehensive WASI port
+# 0002: incapacitate fibers (no ucontext on wasm32-wasi)
 version_patches:
   - "0001-wasi-initial-port"
   - "0002-wasi-fibers"
 
-notes: "8.2 is in security-fixes-only mode. Patches sourced from VMware WasmLabs webassembly-language-runtimes/php/v8.2.6."
+notes: "Security-fixes-only branch. Patches from VMware WasmLabs webassembly-language-runtimes/php/v8.2.6."

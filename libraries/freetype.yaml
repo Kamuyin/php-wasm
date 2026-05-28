@@ -1,0 +1,8 @@
+name: freetype
+version: "2.13.3"
+source_url: "https://download.savannah.gnu.org/releases/freetype/freetype-2.13.3.tar.xz"
+source_sha256: ""
+source_format: "tar.xz"
+source_dir: "freetype-2.13.3"
+output_dir: "freetype-wasm"
+build_type: "autotools"

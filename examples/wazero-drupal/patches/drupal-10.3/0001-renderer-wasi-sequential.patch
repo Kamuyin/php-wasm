@@ -1,0 +1,29 @@
+--- a/core/lib/Drupal/Core/Render/Renderer.php
++++ b/core/lib/Drupal/Core/Render/Renderer.php
+@@ -711,6 +711,26 @@
+     // @see https://www.drupal.org/node/2712935#comment-11368923
+ 
+     // First render all placeholders except 'status messages' placeholders.
++    //
++    // WASI runtimes can stall indefinitely in the Fiber-based scheduler below.
++    // Fall back to sequential replacement to preserve correctness.
++    $is_wasi = (getenv('PHP_WASM_WASI') === '1') || (PHP_OS_FAMILY === 'WASI') || (stripos(PHP_OS, 'wasi') !== FALSE);
++    if ($is_wasi) {
++      $message_placeholders = [];
++      foreach ($elements['#attached']['placeholders'] as $placeholder => $placeholder_element) {
++        if (isset($placeholder_element['#lazy_builder']) && $placeholder_element['#lazy_builder'][0] === 'Drupal\\Core\\Render\\Element\\StatusMessages::renderMessages') {
++          $message_placeholders[] = $placeholder;
++          continue;
++        }
++        $elements = $this->renderPlaceholder($placeholder, $elements);
++      }
++
++      foreach ($message_placeholders as $message_placeholder) {
++        $elements = $this->renderPlaceholder($message_placeholder, $elements);
++      }
++      return TRUE;
++    }
++
+     $message_placeholders = [];
+     $fibers = [];
+     foreach ($elements['#attached']['placeholders'] as $placeholder => $placeholder_element) {

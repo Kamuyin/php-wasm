@@ -1,0 +1,17 @@
+diff --git a/ext/opcache/config.m4 b/ext/opcache/config.m4
+--- a/ext/opcache/config.m4
++++ b/ext/opcache/config.m4
+@@ -218,6 +218,13 @@
+     *linux*)
+       have_shm_mmap_anon=yes
+       ;;
++    *wasm*|*wasi*)
++      dnl WASI: mmap() is emulated by wasi-libc (_WASI_EMULATED_MMAN) as anonymous
++      dnl MAP_PRIVATE (malloc-backed). This satisfies compile-time detection. At
++      dnl runtime, opcache.file_cache_only=1 skips SHM init entirely so the
++      dnl MAP_SHARED call in create_segments() is never reached.
++      have_shm_mmap_anon=yes
++      ;;
+     *)
+       have_shm_mmap_anon=no
+       ;;

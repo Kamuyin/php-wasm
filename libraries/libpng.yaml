@@ -1,0 +1,9 @@
+name: libpng
+version: "1.6.43"
+source_url: "https://download.sourceforge.net/libpng/libpng-1.6.43.tar.xz"
+source_sha256: ""
+source_format: "tar.xz"
+source_dir: "libpng-1.6.43"
+output_dir: "libpng-wasm"
+build_type: "autotools"
+depends: "zlib"

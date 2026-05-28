@@ -8,9 +8,27 @@ JOBS       ?= $(shell nproc 2>/dev/null || echo 4)
 
 SCRIPT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))scripts
 
-.PHONY: all build docker-build test playground playground-server clean help
+.PHONY: all build docker-build build-lib build-libs test test-runner \
+        playground playground-server test-wordpress tidy lint \
+        check-upstream package release clean help
 
 all: build
+
+## Cross-compile a single dependency library for wasm32-wasi
+## Usage: make build-lib LIB=sqlite3
+build-lib:
+	$(SCRIPT_DIR)/build-lib.sh "$(LIB)"
+
+## Cross-compile all libraries required by a profile
+## Usage: make build-libs PROFILE=wordpress
+build-libs:
+	@LIBS=$$(grep '^required_libs:' profiles/$(PROFILE).yaml \
+	         | sed 's/required_libs: *\[//;s/\]//;s/,/ /g' | tr -d '"' | xargs); \
+	if [ -z "$$LIBS" ]; then echo "No required_libs for profile $(PROFILE)"; exit 0; fi; \
+	for lib in $$LIBS; do \
+		echo "==> build-libs: $$lib"; \
+		$(SCRIPT_DIR)/build-lib.sh "$$lib"; \
+	done
 
 ## Build PHP WASM binary directly (requires wasi-sdk in PATH or WASI_SDK_PATH set)
 build:
@@ -38,7 +56,7 @@ docker-build:
 		-e OUTPUT_DIR=/out \
 		php-wasm-build:$(VERSION)-$(PROFILE)
 
-## Build all versions × profiles (direct build; slow without ccache)
+## Build all versions × profiles
 build-all:
 	for ver in 8.2 8.3 8.4; do \
 		for profile in minimal default; do \
@@ -47,10 +65,9 @@ build-all:
 	done
 
 ## Run smoke tests against a built WASM binary
-## Requires: tests/runners/wazero/php-wasm-runner to be built first
 test: test-runner
 	./tests/smoke/run-smoke.sh \
-		--wasm "$(OUTPUT_DIR)/php-$(shell sed -n 's/^php_version: *\"\\([^\"]*\\)\"/\\1/p' versions/$(VERSION)/config.yaml)-$(PROFILE).wasm" \
+		--wasm "$(OUTPUT_DIR)/php-$(shell sed -n 's/^php_version: *\"//;s/\"//p' versions/$(VERSION)/config.yaml)-$(PROFILE).wasm" \
 		--runner wazero
 
 ## Build the wazero test runner
@@ -61,20 +78,28 @@ test-runner:
 playground:
 	cd examples/playground && go build -o playground .
 
-## Start the playground server (build a profile first, e.g. make build VERSION=8.3 PROFILE=default)
+## Start the playground server
 playground-server: playground
 	examples/playground/playground --wasm-dir "$(OUTPUT_DIR)" --addr :8080
+
+## Run WordPress integration tests
+test-wordpress:
+	cd tests/wordpress && go test -v -timeout 300s ./...
 
 ## Run go mod tidy on all Go modules
 tidy:
 	cd tests/runners/wazero && go mod tidy
+	cd tests/wordpress && go mod tidy
 	cd examples/wazero-cgi-minimal && go mod tidy
+	cd examples/wazero-wordpress && go mod tidy
+	cd examples/wazero-drupal && go mod tidy
 	cd examples/playground && go mod tidy
 
 ## Validate shell script syntax
 lint:
 	@echo "Checking shell script syntax..."
-	@for f in scripts/*.sh docker/entrypoint.sh tests/smoke/run-smoke.sh; do \
+	@for f in scripts/*.sh scripts/lib/*.sh docker/entrypoint.sh tests/smoke/run-smoke.sh; do \
+		[ -f "$$f" ] || continue; \
 		echo "  bash -n $$f"; \
 		bash -n "$$f" || exit 1; \
 	done
@@ -84,13 +109,13 @@ lint:
 check-upstream:
 	$(SCRIPT_DIR)/check-upstream.sh
 
-## Push OCI artifact (requires oras + GITHUB_TOKEN + GITHUB_REPOSITORY_OWNER)
+## Push OCI artifact
 package:
-	$(SCRIPT_DIR)/package.sh "$(OUTPUT_DIR)/php-$(shell sed -n 's/^php_version: *\"\\([^\"]*\\)\"/\\1/p' versions/$(VERSION)/config.yaml)-$(PROFILE).wasm"
+	$(SCRIPT_DIR)/package.sh "$(OUTPUT_DIR)/php-$(shell sed -n 's/^php_version: *\"//;s/\"//p' versions/$(VERSION)/config.yaml)-$(PROFILE).wasm"
 
 ## Push and sign OCI artifact with cosign
 release:
-	$(SCRIPT_DIR)/package.sh "$(OUTPUT_DIR)/php-$(shell sed -n 's/^php_version: *\"\\([^\"]*\\)\"/\\1/p' versions/$(VERSION)/config.yaml)-$(PROFILE).wasm" --sign
+	$(SCRIPT_DIR)/package.sh "$(OUTPUT_DIR)/php-$(shell sed -n 's/^php_version: *\"//;s/\"//p' versions/$(VERSION)/config.yaml)-$(PROFILE).wasm" --sign
 
 ## Remove build output
 clean:
@@ -107,12 +132,14 @@ help:
 	@echo ""
 	@echo "Variables (with defaults):"
 	@echo "  VERSION=$(VERSION)       PHP minor version (8.2, 8.3, 8.4)"
-	@echo "  PROFILE=$(PROFILE)     Build profile (minimal, default, full)"
+	@echo "  PROFILE=$(PROFILE)     Build profile (minimal, default, full, wordpress, drupal)"
 	@echo "  OUTPUT_DIR=$(OUTPUT_DIR)  Output directory for .wasm artifacts"
 	@echo "  JOBS=$(JOBS)              Parallel make jobs"
+	@echo "  LIB=<name>            Library name for build-lib target"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build VERSION=8.3 PROFILE=default"
+	@echo "  make build-lib LIB=sqlite3"
+	@echo "  make build-libs PROFILE=wordpress"
 	@echo "  make docker-build VERSION=8.4 PROFILE=full"
 	@echo "  make test VERSION=8.3 PROFILE=minimal"
-	@echo "  make build-all"

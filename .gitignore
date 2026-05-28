@@ -57,6 +57,12 @@ local/
 deps/
 examples/playground/playground
 examples/wazero-cgi-minimal/wazero-cgi-minimal
+examples/wazero-wordpress/wazero-wordpress
+examples/wazero-wordpress/www/
+examples/wazero-wordpress/data/
+examples/wazero-drupal/wazero-drupal
+examples/wazero-drupal/www/
+examples/wazero-drupal/data/
 
 tests/runners/wazero/php-wasm-runner
 tests/runners/wazero/wazero

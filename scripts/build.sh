@@ -64,7 +64,20 @@ echo "    Jobs        : ${JOBS}"
 echo "    wasm-opt    : ${RUN_WASM_OPT} (auto if installed)"
 echo ""
 
-BUILD_DIR="${TMPDIR:-/tmp}/php-wasm-build-${VERSION}-${PROFILE}"
+# Cache build trees by version+profile+patchset hash so patch/config changes
+# always build from a fresh extracted source tree.
+PATCHSET_KEY="$(
+    {
+        sha256sum "${VERSION_DIR}/config.yaml"
+        find "${REPO_ROOT}/patches/php" -maxdepth 1 -type f -name '*.patch' -print | sort | while read -r f; do
+            sha256sum "${f}"
+        done
+        find "${VERSION_DIR}/patches" -maxdepth 1 -type f -name '*.patch' -print | sort | while read -r f; do
+            sha256sum "${f}"
+        done
+    } | sha256sum | awk '{print substr($1,1,12)}'
+)"
+BUILD_DIR="${TMPDIR:-/tmp}/php-wasm-build-${VERSION}-${PROFILE}-${PATCHSET_KEY}"
 mkdir -p "${BUILD_DIR}" "${OUTPUT_DIR}"
 
 # Step 1: Fetch source (cache-aware)

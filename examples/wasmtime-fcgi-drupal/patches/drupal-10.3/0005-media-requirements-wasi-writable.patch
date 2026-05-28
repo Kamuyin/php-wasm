@@ -1,0 +1,12 @@
+--- a/core/modules/media/media.install
++++ b/core/modules/media/media.install
+@@ -60,7 +60,8 @@
+   if ($phase == 'install') {
+     $destination = 'public://media-icons/generic';
+     \Drupal::service('file_system')->prepareDirectory($destination, FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS);
+-    $is_writable = is_writable($destination);
++    // is_writable() on stream wrapper paths is unreliable under WASI Preview1.
++    $is_writable = getenv('PHP_WASM_WASI') ? is_dir($destination) : is_writable($destination);
+     $is_directory = is_dir($destination);
+     if (!$is_writable || !$is_directory) {
+       if (!$is_directory) {

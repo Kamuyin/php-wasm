@@ -1,0 +1,12 @@
+diff --git a/Zend/zend_alloc.c b/Zend/zend_alloc.c
+--- a/Zend/zend_alloc.c
++++ b/Zend/zend_alloc.c
+@@ -704,7 +704,7 @@
+
+ static zend_always_inline void zend_mm_hugepage(void* ptr, size_t size)
+ {
+-#if defined(MADV_HUGEPAGE)
++#if defined(MADV_HUGEPAGE) && !defined(__wasi__)
+ 	(void)madvise(ptr, size, MADV_HUGEPAGE);
+ #elif defined(HAVE_MEMCNTL)
+ 	struct memcntl_mha m = {.mha_cmd = MHA_MAPSIZE_VA, .mha_pagesize = ZEND_MM_CHUNK_SIZE, .mha_flags = 0};

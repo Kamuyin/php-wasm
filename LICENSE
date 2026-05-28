@@ -23,5 +23,5 @@ SOFTWARE.
 ---
 
 Note: This repository contains build infrastructure and patches only.
-PHP source code (fetched at build time) is licensed under a different license, the PHP License, which can be found at:
+PHP source code is licensed under a different license, the PHP License, which can be found at:
 https://www.php.net/license/

@@ -1,0 +1,51 @@
+--- a/core/modules/big_pipe/src/Render/BigPipe.php
++++ b/core/modules/big_pipe/src/Render/BigPipe.php
+@@ -514,6 +514,48 @@
+     $fake_request = $this->requestStack->getMainRequest()->duplicate();
+     $fake_request->headers->set('Accept', 'application/vnd.drupal-ajax');
+ 
++    // PHP_WASM_WASI: Fiber context-switching is not supported on WASI runtimes.
++    // Render BigPipe placeholders sequentially so the page does not stall.
++    $is_wasi = (getenv('PHP_WASM_WASI') === '1') || (PHP_OS_FAMILY === 'WASI') || (stripos(PHP_OS, 'wasi') !== FALSE);
++    if ($is_wasi) {
++      foreach ($placeholder_order as $placeholder_id) {
++        if (!isset($placeholders[$placeholder_id])) {
++          continue;
++        }
++        try {
++          $elements = $this->renderPlaceholder($placeholder_id, $placeholders[$placeholder_id]);
++          $ajax_response = new AjaxResponse();
++          $big_pipe_js_placeholder_id = Html::decodeEntities($placeholder_id);
++          $ajax_response->addCommand(new ReplaceCommand(sprintf('[data-big-pipe-placeholder-id="%s"]', $big_pipe_js_placeholder_id), $elements['#markup']));
++          $ajax_response->setAttachments($elements['#attached']);
++          $messages = $this->messenger->deleteAll();
++          foreach ($messages as $type => $type_messages) {
++            foreach ($type_messages as $message) {
++              $ajax_response->addCommand(new MessageCommand($message, NULL, ['type' => $type], FALSE));
++            }
++          }
++          $fake_request->query->set('ajax_page_state', ['libraries' => implode(',', $cumulative_assets->getAlreadyLoadedLibraries())] + $cumulative_assets->getSettings()['ajaxPageState']);
++          $ajax_response = $this->filterEmbeddedResponse($fake_request, $ajax_response);
++          $json = $ajax_response->getContent();
++          $output = '<script type="application/vnd.drupal-ajax" data-big-pipe-replacement-for-placeholder-with-id="' . $placeholder_id . '">' . "\n" . $json . "\n</script>";
++          $this->sendChunk($output);
++          if (isset($ajax_response->getAttachments()['drupalSettings']['ajaxPageState']['libraries'])) {
++            $cumulative_assets->setAlreadyLoadedLibraries(explode(',', $ajax_response->getAttachments()['drupalSettings']['ajaxPageState']['libraries']));
++          }
++        }
++        catch (\Exception $e) {
++          if ($this->configFactory->get('system.logging')->get('error_level') === ERROR_REPORTING_DISPLAY_VERBOSE) {
++            throw $e;
++          }
++          else {
++            trigger_error($e, E_USER_ERROR);
++          }
++        }
++      }
++      $this->sendChunk("\n" . static::STOP_SIGNAL . "\n");
++      return;
++    }
++
+     // Create a Fiber for each placeholder.
+     $fibers = [];
+     foreach ($placeholder_order as $placeholder_id) {

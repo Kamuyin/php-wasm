@@ -1,0 +1,31 @@
+diff --git a/ext/random/csprng.c b/ext/random/csprng.c
+--- a/ext/random/csprng.c
++++ b/ext/random/csprng.c
+@@ -43,6 +43,10 @@
+ # include <sys/syscall.h>
+ #endif
+ 
++#ifdef __wasi__
++# include <wasi/api.h>
++#endif
++
+ #if HAVE_SYS_PARAM_H
+ # include <sys/param.h>
+ # if (__FreeBSD__ && __FreeBSD_version > 1200000) || (__DragonFly__ && __DragonFly_version >= 500700) || \
+@@ -62,7 +66,15 @@
+ 
+ PHPAPI zend_result php_random_bytes(void *bytes, size_t size, bool should_throw)
+ {
+-#ifdef PHP_WIN32
++#ifdef __wasi__
++	__wasi_errno_t wasi_err = __wasi_random_get((uint8_t *)bytes, size);
++	if (wasi_err != __WASI_ERRNO_SUCCESS) {
++		if (should_throw) {
++			zend_throw_exception_ex(random_ce_Random_RandomException, 0, "WASI random_get failed (errno %d)", (int) wasi_err);
++		}
++		return FAILURE;
++	}
++#elif defined(PHP_WIN32)
+ 	/* Defer to CryptGenRandom on Windows */
+ 	if (php_win32_get_random_bytes(bytes, size) == FAILURE) {
+ 		if (should_throw) {

@@ -1,0 +1,10 @@
+name: 'Breakpoint test theme'
+type: theme
+description: 'Test theme for breakpoint.'
+# version: VERSION
+base theme: olivero
+
+# Information added by Drupal.org packaging script on 2024-10-03
+version: '10.3.6'
+project: 'drupal'
+datestamp: 1727949002

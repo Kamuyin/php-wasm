@@ -1,0 +1,69 @@
+--- a/main/fastcgi.c
++++ b/main/fastcgi.c
+@@ -531,7 +531,7 @@
+ 			return is_fastcgi = 0;
+ 		}
+ #elif defined(__wasi__)
+-		return is_fastcgi = 0;
++		return is_fastcgi = getenv("PHP_FCGI_FORCE") != NULL;
+ #else
+ 		errno = 0;
+ 		if (getpeername(0, (struct sockaddr *)&sa, &len) != 0 && errno == ENOTCONN) {
+@@ -952,6 +952,8 @@
+ 				errno = WSAGetLastError();
+ 			}
+ 		}
++#elif defined(__wasi__)
++		ret = write(STDOUT_FILENO, ((char*)buf)+n, count-n);
+ #else
+ 		ret = write(req->fd, ((char*)buf)+n, count-n);
+ #endif
+@@ -1053,7 +1055,6 @@
+ 	return 1;
+ }
+ 
+-#ifndef __wasi__
+ static int fcgi_read_request(fcgi_request *req)
+ {
+ 	fcgi_header hdr;
+@@ -1223,12 +1224,6 @@
+ 
+ 	return 1;
+ }
+-#else // __wasi__
+-static int fcgi_read_request(fcgi_request *req)
+-{
+-  return 0;
+-}
+-#endif // __wasi__
+ 
+ int fcgi_read(fcgi_request *req, char *str, int len)
+ {
+@@ -1316,6 +1311,7 @@
+ 			closesocket(req->fd);
+ 		}
+ #else
++#ifndef __wasi__
+ 		if (!force) {
+ 			char buf[8];
+ 
+@@ -1324,6 +1320,7 @@
+ 			while (recv(req->fd, buf, sizeof(buf), 0) > 0) {}
+ 		}
+ 		close(req->fd);
++#endif /* __wasi__ */
+ #endif
+ #ifdef TCP_NODELAY
+ 		req->nodelay = 0;
+@@ -1379,6 +1376,11 @@
+ 
+ int fcgi_accept_request(fcgi_request *req)
+ {
++#ifdef __wasi__
++	/* WASI: no sockets; read one FastCGI request from stdin, send response to stdout */
++	req->fd = STDIN_FILENO;
++	return fcgi_read_request(req) ? req->fd : -1;
++#endif
+ #ifdef _WIN32
+ 	HANDLE pipe;
+ 	OVERLAPPED ov;

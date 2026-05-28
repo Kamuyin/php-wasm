@@ -1,0 +1,13 @@
+--- a/core/lib/Drupal/Core/Theme/Registry.php
++++ b/core/lib/Drupal/Core/Theme/Registry.php
+@@ -252,7 +252,9 @@
+     // If called from inside a Fiber, suspend it, this may allow another code
+     // path to begin an asynchronous operation before we do the CPU-intensive
+     // task of building the theme registry.
+-    if (\Fiber::getCurrent() !== NULL) {
++    // PHP_WASM_WASI: on WASI Fiber::suspend() cannot safely yield; skip the hint.
++    $is_wasi = (getenv('PHP_WASM_WASI') === '1') || (PHP_OS_FAMILY === 'WASI') || (stripos(PHP_OS, 'wasi') !== FALSE);
++    if (!$is_wasi && \Fiber::getCurrent() !== NULL) {
+       \Fiber::suspend();
+       // When the Fiber is resumed, check the cache again since it may have been
+       // built in the meantime, either in this process or via a different

@@ -1,0 +1,50 @@
+--- a/main/fastcgi.c
++++ b/main/fastcgi.c
+@@ -531,14 +531,14 @@
+ 			return is_fastcgi = 0;
+ 		}
+ #elif defined(__wasi__)
+-		return is_fastcgi = 0;
++		return is_fastcgi = getenv("PHP_FCGI_FORCE") != NULL;
+ #else
+ 		errno = 0;
+ 		if (getpeername(0, (struct sockaddr *)&sa, &len) != 0 && errno == ENOTCONN) {
+ 			fcgi_setup_signals();
+ 			return is_fastcgi = 1;
+ 		} else {
+-		return is_fastcgi = getenv("PHP_FCGI_FORCE") != NULL;
++			return is_fastcgi = 0;
+ 		}
+ #endif
+ 	}
+@@ -1055,7 +1055,6 @@
+ 	return 1;
+ }
+ 
+-#ifndef __wasi__
+ static int fcgi_read_request(fcgi_request *req)
+ {
+ 	fcgi_header hdr;
+@@ -1114,7 +1113,9 @@
+ 			int on = 1;
+ # endif
+ 
++# ifndef __wasi__
+ 			setsockopt(req->fd, IPPROTO_TCP, TCP_NODELAY, (char*)&on, sizeof(on));
++# endif
+ 			req->nodelay = 1;
+ 		}
+ #endif
+@@ -1225,12 +1226,6 @@
+ 
+ 	return 1;
+ }
+-#else // __wasi__
+-static int fcgi_read_request(fcgi_request *req)
+-{
+-  return 0;
+-}
+-#endif // __wasi__
+ 
+ int fcgi_read(fcgi_request *req, char *str, int len)
+ {

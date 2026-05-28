@@ -1,0 +1,8 @@
+name: sqlite3
+version: "3.47.2"
+source_url: "https://www.sqlite.org/2024/sqlite-amalgamation-3470200.zip"
+source_sha256: ""
+source_format: "zip"
+source_dir: "sqlite-amalgamation-3470200"
+output_dir: "sqlite3-wasm"
+build_type: "amalgam"

@@ -56,7 +56,7 @@ func main() {
 	ctx := context.Background()
 	runtimes := make(map[string]*phpRuntime)
 
-	for _, profile := range []string{"minimal", "default", "full"} {
+	for _, profile := range []string{"minimal", "default", "full", "wordpress"} {
 		pattern := filepath.Join(*wasmDir, fmt.Sprintf("php-*-%s.wasm", profile))
 		matches, _ := filepath.Glob(pattern)
 		if len(matches) == 0 {

@@ -26,6 +26,8 @@ extensions_snapshot:
     - pdo_sqlite
     - sqlite3
 
+required_libs: [sqlite3]
+
 expected_wasm_size_kb: 5000
 
 notes: |

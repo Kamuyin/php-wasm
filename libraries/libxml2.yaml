@@ -1,0 +1,8 @@
+name: libxml2
+version: "2.12.9"
+source_url: "https://download.gnome.org/sources/libxml2/2.12/libxml2-2.12.9.tar.xz"
+source_sha256: ""
+source_format: "tar.xz"
+source_dir: "libxml2-2.12.9"
+output_dir: "libxml2-wasm"
+build_type: "autotools"

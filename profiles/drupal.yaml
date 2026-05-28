@@ -1,0 +1,61 @@
+# $schema: ../schemas/profile.schema.json
+name: "drupal"
+description: "Drupal profile: default + XML stack, gd, fileinfo, exif, session, SQLite"
+
+configure_flags:
+  - "--enable-mbstring"
+  - "--disable-mbregex"
+  - "--enable-ctype"
+  - "--enable-filter"
+  - "--enable-tokenizer"
+  - "--enable-bcmath"
+  - "--enable-calendar"
+  - "--enable-session"
+  - "--enable-pdo"
+  - "--with-pdo-sqlite=deps/sqlite3-wasm"
+  - "--with-sqlite3=deps/sqlite3-wasm"
+  - "--with-libxml=deps/libxml2-wasm"
+  - "--enable-xml"
+  - "--enable-dom"
+  - "--enable-simplexml"
+  - "--enable-xmlreader"
+  - "--enable-xmlwriter"
+  - "--enable-opcache"
+  # libpng detected via PKG_CONFIG_PATH; libpng.pc declares Requires: zlib
+  # libjpeg intentionally omitted — turbo's setjmp triggers WASM EH tags
+  - "--with-zlib-dir=deps/zlib-wasm"
+  - "--enable-gd"
+  - "--with-freetype=deps/freetype-wasm"
+  - "--enable-fileinfo"
+  - "--enable-exif"
+
+required_libs: [sqlite3, libxml2, zlib, libpng, freetype]
+
+extensions_snapshot:
+  - json
+  - mbstring
+  - session
+  - ctype
+  - filter
+  - tokenizer
+  - bcmath
+  - calendar
+  - pdo
+  - pdo_sqlite
+  - sqlite3
+  - xml
+  - dom
+  - simplexml
+  - xmlreader
+  - xmlwriter
+  - gd
+  - fileinfo
+  - exif
+
+expected_wasm_size_kb: 10500
+
+notes: |
+  Targets Drupal with SQLite (driver=sqlite) and no outbound networking.
+  cmake is required on the build host (libjpeg-turbo 3.x is CMake-only).
+  Run `make build-libs PROFILE=drupal` to build all required libraries before building PHP.
+  See docs/DRUPAL.md for setup and runtime caveats.

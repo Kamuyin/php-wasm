@@ -1,0 +1,74 @@
+# $schema: ../schemas/profile.schema.json
+name: "wordpress"
+description: "WordPress profile: default + xml/dom/simplexml/fileinfo/exif (libxml2-backed)"
+
+configure_flags:
+    # Inherited from default.yaml
+    - "--enable-mbstring"
+    - "--disable-mbregex"
+    - "--enable-ctype"
+    - "--enable-filter"
+    - "--enable-tokenizer"
+    - "--enable-bcmath"
+    - "--enable-calendar"
+    - "--enable-session"
+    - "--enable-pdo"
+    - "--with-pdo-sqlite=deps/sqlite3-wasm"
+    - "--with-sqlite3=deps/sqlite3-wasm"
+    # libxml2-backed XML stack — required by WordPress for RSS, oEmbed,
+    # SimpleXML, importer plugin, and several core functions
+    - "--with-libxml=deps/libxml2-wasm"
+    - "--enable-xml"
+    - "--enable-dom"
+    - "--enable-simplexml"
+    - "--enable-xmlreader"
+    - "--enable-xmlwriter"
+    # File handling for media uploads
+    - "--enable-fileinfo"
+    - "--enable-exif"
+
+extensions_snapshot:
+    - json
+    - mbstring
+    - session
+    - ctype
+    - filter
+    - tokenizer
+    - bcmath
+    - calendar
+    - pdo
+    - pdo_sqlite
+    - sqlite3
+    - xml
+    - dom
+    - simplexml
+    - xmlreader
+    - xmlwriter
+    - fileinfo
+    - exif
+
+required_libs: [sqlite3, libxml2]
+
+expected_wasm_size_kb: 8000
+
+notes: |
+    Targeted at WordPress with the sqlite-database-integration drop-in plugin
+    (https://wordpress.org/plugins/sqlite-database-integration/), which provides
+    a wp-content/db.php that maps WordPress's MySQL queries to SQLite. WASI
+    Preview1 has no sockets, so MySQL/Postgres are not options.
+
+    Pre-build dependencies:
+      - scripts/build-sqlite3.sh (already required by default profile)
+      - scripts/build-libxml2.sh (this profile only)
+
+    Intentionally excluded vs. full.yaml:
+      - gd / libjpeg / libpng / freetype: WordPress accepts uploads without gd
+        (no auto-resized intermediate sizes). Adds ~3 MB and three system deps.
+      - zip / libzip: only needed for plugin/theme uploads through wp-admin.
+        WP_HTTP_BLOCK_EXTERNAL=true in our reference wp-config.php disables
+        most upload flows anyway.
+      - openssl stubs: misleading in a no-network environment. WP gracefully
+        degrades when no http transports are available.
+      - phar / soap / sockets / pcntl: not used by WordPress core.
+
+    See WORDPRESS.md at the repo root for the end-to-end setup walkthrough.

@@ -1,0 +1,94 @@
+diff --git a/ext/gd/libgd/gd_bmp.c b/ext/gd/libgd/gd_bmp.c
+--- a/ext/gd/libgd/gd_bmp.c
++++ b/ext/gd/libgd/gd_bmp.c
+@@ -113,16 +113,21 @@ void gdImageBmpCtx(gdImagePtr im, gdIOCtxPtr out, int compression)
+ 
+ 	if (compression == 1 && !out->seek) {
+ 		/* Try to create a temp file where we can seek */
++#ifdef __wasi__
++		/* wasi-libc doesn't provide tmpfile(); fall back to uncompressed output. */
++		compression = 0;
++#else
+ 		if ((tmpfile_for_compression = tmpfile()) == NULL) {
+ 			compression = 0;
+ 		} else {
+ 			out_original = out;
+ 			if ((out = (gdIOCtxPtr)gdNewFileCtx(tmpfile_for_compression)) == NULL) {
+ 				out = out_original;
+ 				out_original = NULL;
+ 				compression = 0;
+ 			}
+ 		}
++#endif
+ 	}
+ 
+ 	bitmap_size = ((im->sx * (im->trueColor ? 24 : 8)) / 8) * im->sy;
+diff --git a/ext/gd/libgd/gd_jpeg.c b/ext/gd/libgd/gd_jpeg.c
+--- a/ext/gd/libgd/gd_jpeg.c
++++ b/ext/gd/libgd/gd_jpeg.c
+@@ -23,7 +23,6 @@
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+-#include <setjmp.h>
+ #include <limits.h>
+ #include <string.h>
+ 
+@@ -35,6 +34,7 @@
+ #ifdef HAVE_LIBJPEG
+ #include "gdhelpers.h"
+ #undef HAVE_STDLIB_H
++#include <setjmp.h>
+ 
+ /* 1.8.1: remove dependency on jinclude.h */
+ #include "jpeglib.h"
+diff --git a/ext/gd/libgd/gd_errors.h b/ext/gd/libgd/gd_errors.h
+--- a/ext/gd/libgd/gd_errors.h
++++ b/ext/gd/libgd/gd_errors.h
+@@ -1,8 +1,18 @@
+ #ifndef GD_ERRORS_H
+ #define GD_ERRORS_H
+ 
+-#ifndef _WIN32
++#if defined(__wasi__)
++/* wasi-libc doesn't provide <syslog.h>; libgd only needs LOG_* constants. */
++# define LOG_EMERG   0
++# define LOG_ALERT   1
++# define LOG_CRIT    2
++# define LOG_ERR     3
++# define LOG_WARNING 4
++# define LOG_NOTICE  5
++# define LOG_INFO    6
++# define LOG_DEBUG   7
++#elif !defined(_WIN32)
+ # include <syslog.h>
+ #else
+ # include "win32/syslog.h"
+ #endif
+diff --git a/ext/standard/syslog.c b/ext/standard/syslog.c
+--- a/ext/standard/syslog.c
++++ b/ext/standard/syslog.c
+@@ -228,3 +228,23 @@ PHPAPI void php_syslog_str(int priority, const char *message, size_t message_le
+ }
+ /* }}} */
+ #endif /* HAVE_SYSLOG_H */
++
++#if !HAVE_SYSLOG_H && defined(__wasi__)
++/* On WASI, AC_CHECK_FUNC(syslog) fails because wasi-libc exposes no
++ * linkable syslog symbol, leaving HAVE_SYSLOG_H=0 and the block above
++ * uncompiled. mail() and PHP's error logger still call these internal
++ * wrappers; provide no-op stubs so the linker is satisfied. */
++PHPAPI void php_openlog(const char *ident, int option, int facility)
++{
++	(void)ident; (void)option; (void)facility;
++}
++PHPAPI void php_closelog(void) {}
++PHPAPI void php_syslog(int priority, const char *message)
++{
++	(void)priority; (void)message;
++}
++PHPAPI void php_syslog_str(int priority, const char *message, size_t message_len)
++{
++	(void)priority; (void)message; (void)message_len;
++}
++#endif /* !HAVE_SYSLOG_H && __wasi__ */

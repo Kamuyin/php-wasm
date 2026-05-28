@@ -3,7 +3,6 @@ php_version: "8.3.30"
 source_tag: "php-8.3.30"
 source_sha256: "e587dc95fb7f62730299fa7b36b6e4f91e6708aaefa2fff68a0098d320c16386"
 
-# Configure flags validated against VMware WasmLabs wlr-build.sh.
 configure_extra:
   - "--disable-all"
   - "--enable-cgi"
@@ -16,21 +15,21 @@ configure_extra:
   - "--without-openssl"
   - "--without-pcre-jit"
 
-# No common patches — the version-specific patch 0001 is the comprehensive
-# VMware WasmLabs initial WASI port (webassembly-language-runtimes/php/master).
-common_patches: []
+php_patches:
+  - "0001-wasi-session-uid-stub"
+  - "0002-wasi-csprng"
+  - "0003-wasi-gd-syslog-tmpfile"
+  - "0004-wasi-opcache-mmap-anon"
+  - "0005-wasi-zend-madvise"
+  - "0006-wasi-zend-chunk-alloc"
+  - "0007-wasi-fcgi-stdin-stdout"
 
-# Version-specific WASI patches for PHP 8.3.
-# 0001: initial WASI port (VMware WasmLabs master branch, targeting PHP 8.3)
-# 0002: supplemental stubs missed by 0001 on 8.3.30: php_do_chown guard, dup stub,
-#        php_socket_strerror/php_socket_error_str, php_mail WASI stub
+# 0001: VMware WasmLabs master comprehensive WASI port (targeting 8.3)
+# 0002: four stubs absent from 0001 on 8.3.30 (php_do_chown, dup, socket_strerror, php_mail)
 version_patches:
   - "0001-wasi-initial-port"
   - "0002-83-wasi-missing-stubs"
+  - "0003-83-wasi-fastcgi-cgi-main"
+  - "0004-83-wasi-fastcgi-main"
 
-notes: |
-  8.3 is the primary supported branch. Patches sourced from VMware WasmLabs webassembly-language-runtimes/php/master.
-  Patch 0002 covers four gaps in 0001 specific to PHP 8.3.30: missing #ifndef __wasi__ guard on
-  php_do_chown (filestat.c), missing dup() stub (php_fopen_wrapper.c), missing
-  php_socket_strerror/php_socket_error_str implementations, and missing php_mail WASI stub
-  needed when mbstring is enabled (wasi/main/network.c).
+notes: "Primary supported branch. Patches from VMware WasmLabs webassembly-language-runtimes/php/master."

@@ -13,17 +13,17 @@ WASI-compatible runtime — including [wazero](https://wazero.io/), wasmtime, an
 This repo contains **patches and build infrastructure only**. PHP source code is fetched
 from the official [php/php-src](https://github.com/php/php-src) repository at build time.
 
-## Quickstart (3 commands)
+## Quickstart
 
 ```bash
-# 1. Build PHP 8.3 (default profile) in Docker
+# Build PHP 8.3 (default profile) in Docker
 make docker-build VERSION=8.3 PROFILE=default
 
-# 2. Run a smoke test with wazero
+# Run smoke tests
 cd tests/runners/wazero && go build -o php-wasm-runner .
 ./tests/smoke/run-smoke.sh --wasm ../../out/php-8.3.30-default.wasm
 
-# 3. Serve PHP scripts over HTTP (Go example)
+# Serve PHP scripts over HTTP
 cd examples/wazero-cgi-minimal
 go run main.go --wasm ../../out/php-8.3.30-default.wasm --docroot ./www --addr :8080
 ```
@@ -41,7 +41,9 @@ go run main.go --wasm ../../out/php-8.3.30-default.wasm --docroot ./www --addr :
 | Profile | Extensions | Size |
 |---------|-----------|------|
 | `minimal` | Core, json, tokenizer, ctype, filter | ~3 MB |
-| `default` | + mbstring, pdo_sqlite, xml, bcmath | ~7.5 MB |
+| `default` | + mbstring, pdo_sqlite, bcmath | ~7.5 MB |
+| `wordpress` | + xml, dom, simplexml, fileinfo, exif | ~7–8 MB |
+| `drupal` | Similar to wordpress | ~8 MB |
 | `full` | + gd, zip, openssl, exif, fileinfo | ~14 MB |
 
 ## Consumer Example (wazero / Go)
@@ -69,7 +71,7 @@ func main() {
     compiled, _ := rt.CompileModule(ctx, wasmBytes)
     defer compiled.Close(ctx)
 
-    // One module instance per CGI request
+    // one module instance per CGI request
     mod, _ := rt.InstantiateModule(ctx, compiled,
         wazero.NewModuleConfig().
             WithEnv("REQUEST_METHOD", "GET").
@@ -89,34 +91,23 @@ See `examples/wazero-cgi-minimal/` for a complete HTTP server example.
 | Feature | Status |
 |---------|--------|
 | Networking (TCP/UDP) | Not available — WASI Preview1 has no network socket API |
-| Fibers / coroutines | Not available — no ucontext/stack switching in WASM |
+| Fibers / coroutines | Not available — no ucontext in WASM |
 | fork / exec / popen | Stubbed — returns `false` + `E_WARNING` |
 | opcache / JIT | Disabled — no RWX memory pages in WASM |
-| Threads | Not available — `pthreads`, `parallel` |
+| Threads | Not available |
 | MySQL / PostgreSQL | Not available — requires network sockets |
-| PCRE JIT | Disabled — compiled without |
-| `mail()` | Disabled — no sendmail |
-
-## Architecture
-
-```
-versions/X.Y/config.yaml    profiles/default.yaml
-       +                           +
-       v                           v
-  fetch-source.sh  -->  apply-patches.sh  -->  configure-php.sh  -->  make
-                                                                        |
-                                                                 php-X.Y-profile.wasm
-```
-
-See `docs/ARCHITECTURE.md` for the full picture.
+| PCRE JIT | Disabled |
+| `mail()` | Disabled |
 
 ## Documentation
 
 - [Building locally](docs/BUILDING.md)
+- [Architecture overview](docs/ARCHITECTURE.md)
 - [Consumer API contract](docs/CONSUMER_API.md)
 - [Adding a PHP version](docs/ADDING_VERSION.md)
 - [Updating patches](docs/UPDATING_PATCHES.md)
-- [Architecture overview](docs/ARCHITECTURE.md)
+- [WordPress guide](docs/WORDPRESS.md)
+- [Drupal guide](docs/DRUPAL.md)
 
 ## License
 

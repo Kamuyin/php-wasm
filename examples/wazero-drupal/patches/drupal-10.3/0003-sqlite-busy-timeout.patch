@@ -1,0 +1,12 @@
+--- a/core/modules/sqlite/src/Driver/Database/sqlite/Connection.php
++++ b/core/modules/sqlite/src/Driver/Database/sqlite/Connection.php
+@@ -159,7 +159,8 @@
+       'init_commands' => [],
+     ];
+     $connection_options['init_commands'] += [
+-      'wal' => "PRAGMA journal_mode=WAL",
++      'busy_timeout' => "PRAGMA busy_timeout=30000",
++      'wal' => "PRAGMA journal_mode=MEMORY",
+     ];
+
+     // Execute sqlite init_commands.
