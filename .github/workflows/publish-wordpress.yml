@@ -54,15 +54,20 @@ jobs:
             --file docker/Dockerfile.builder \
             .
 
-      - name: Extract wasm artifact
+      - name: Build deps + extract wasm artifact
         run: |
           mkdir -p out
+          # The wordpress profile needs sqlite3 + libxml2 cross-compiled to
+          # wasm32-wasi before the PHP build. Build them, then run the normal
+          # entrypoint, in one container invocation so /build/deps persists.
           docker run --rm \
             --mount type=bind,src="$(pwd)/out",dst=/out \
             -e PHP_VERSION=${{ inputs.php_version }} \
             -e PROFILE=wordpress \
             -e OUTPUT_DIR=/out \
-            php-wasm-builder:${{ inputs.php_version }}-wordpress
+            --entrypoint bash \
+            php-wasm-builder:${{ inputs.php_version }}-wordpress \
+            -c 'set -euo pipefail; cd /build; scripts/build-lib.sh sqlite3; scripts/build-lib.sh libxml2; docker/entrypoint.sh'
           ls -lh out/
 
       - name: Publish php-wasm binary to ghcr.io
