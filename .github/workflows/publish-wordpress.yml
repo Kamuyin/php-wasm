@@ -1,0 +1,99 @@
+name: Publish WordPress artifacts
+
+# Builds the PHP wasm binary for the `wordpress` profile and assembles the
+# matching WordPress asset bundle, then publishes both to GitHub Packages
+# (ghcr.io) as OCI artifacts the Gimpel wordpress-honeypot module fetches:
+#   ghcr.io/<owner>/php-wasm:<php>-wordpress
+#   ghcr.io/<owner>/wordpress-assets:<wp_version>
+on:
+  workflow_dispatch:
+    inputs:
+      php_version:
+        description: 'PHP version to build'
+        required: true
+        default: '8.3'
+      wordpress_version:
+        description: 'WordPress version to bundle'
+        required: true
+        default: '6.7'
+      sqlite_plugin_version:
+        description: 'sqlite-database-integration plugin version'
+        required: false
+        default: '2.1.13'
+
+jobs:
+  publish:
+    name: Publish PHP ${{ inputs.php_version }} + WordPress ${{ inputs.wordpress_version }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install oras
+        uses: oras-project/setup-oras@v1
+
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build PHP ${{ inputs.php_version }} (wordpress profile)
+        run: |
+          docker buildx build \
+            --load \
+            --build-arg PHP_VERSION=${{ inputs.php_version }} \
+            --build-arg PROFILE=wordpress \
+            --tag php-wasm-builder:${{ inputs.php_version }}-wordpress \
+            --file docker/Dockerfile.builder \
+            .
+
+      - name: Extract wasm artifact
+        run: |
+          mkdir -p out
+          docker run --rm \
+            --mount type=bind,src="$(pwd)/out",dst=/out \
+            -e PHP_VERSION=${{ inputs.php_version }} \
+            -e PROFILE=wordpress \
+            -e OUTPUT_DIR=/out \
+            php-wasm-builder:${{ inputs.php_version }}-wordpress
+          ls -lh out/
+
+      - name: Publish php-wasm binary to ghcr.io
+        env:
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          WASM_FILE=$(ls out/php-*-wordpress.wasm | head -1)
+          echo "Publishing ${WASM_FILE}"
+          # package.sh derives the tag from the filename (php-<ver>-wordpress).
+          # Retag to the short profile-tag the Gimpel module expects.
+          scripts/package.sh "${WASM_FILE}"
+          OWNER_LC=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          FULL_TAG=$(basename "${WASM_FILE}" .wasm | sed 's/^php-//')   # e.g. 8.3.30-wordpress
+          oras tag "ghcr.io/${OWNER_LC}/php-wasm:${FULL_TAG}" "ghcr.io/${OWNER_LC}/php-wasm:${{ inputs.php_version }}-wordpress"
+          echo "Tagged ghcr.io/${OWNER_LC}/php-wasm:${{ inputs.php_version }}-wordpress"
+
+      - name: Assemble and publish WordPress asset bundle
+        env:
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          WP_VERSION: ${{ inputs.wordpress_version }}
+          SQLITE_PLUGIN_VERSION: ${{ inputs.sqlite_plugin_version }}
+        run: scripts/assemble-wordpress-assets.sh --push
+
+      - name: Summary
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          {
+            echo "## Published"
+            echo ""
+            echo "- \`ghcr.io/${OWNER_LC}/php-wasm:${{ inputs.php_version }}-wordpress\`"
+            echo "- \`ghcr.io/${OWNER_LC}/wordpress-assets:${{ inputs.wordpress_version }}\`"
+            echo ""
+            echo "Make both packages **public** (or give the agent a pull token) so the Gimpel agent can fetch them."
+          } >> "$GITHUB_STEP_SUMMARY"
