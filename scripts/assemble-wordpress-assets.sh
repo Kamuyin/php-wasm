@@ -58,8 +58,13 @@ mv "${BUILD_DIR}/wordpress" "${WWW}"
 info "Installing sqlite-database-integration ${SQLITE_PLUGIN_VERSION}"
 PLUGINS_DIR="${WWW}/wp-content/plugins"
 SQLITE_ZIP="${CACHE_DIR}/sqlite-database-integration.${SQLITE_PLUGIN_VERSION}.zip"
-[[ -f "${SQLITE_ZIP}" ]] || curl -fsSL -o "${SQLITE_ZIP}" \
-  "https://downloads.wordpress.org/plugin/sqlite-database-integration.${SQLITE_PLUGIN_VERSION}.zip"
+if [[ ! -f "${SQLITE_ZIP}" ]]; then
+  # Try the pinned version, fall back to the latest published zip if it 404s.
+  curl -fsSL -o "${SQLITE_ZIP}" \
+    "https://downloads.wordpress.org/plugin/sqlite-database-integration.${SQLITE_PLUGIN_VERSION}.zip" \
+  || curl -fsSL -o "${SQLITE_ZIP}" \
+    "https://downloads.wordpress.org/plugin/sqlite-database-integration.zip"
+fi
 mkdir -p "${PLUGINS_DIR}"
 unzip -q "${SQLITE_ZIP}" -d "${PLUGINS_DIR}"
 
