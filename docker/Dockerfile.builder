@@ -133,11 +133,12 @@ ENV PATH="/usr/lib/ccache:${WASI_SDK_PATH}/bin:${PATH}"
 WORKDIR /build
 
 # Copy repo files
-COPY patches/  /build/patches/
-COPY versions/ /build/versions/
-COPY profiles/ /build/profiles/
-COPY scripts/  /build/scripts/
-COPY docker/   /build/docker/
+COPY patches/   /build/patches/
+COPY versions/  /build/versions/
+COPY profiles/  /build/profiles/
+COPY libraries/ /build/libraries/
+COPY scripts/   /build/scripts/
+COPY docker/    /build/docker/
 
 RUN chmod +x /build/scripts/*.sh /build/docker/entrypoint.sh
 
