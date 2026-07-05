@@ -23,7 +23,7 @@ var (
 	docRoot    = flag.String("docroot", "./www", "Path to the document root")
 	dataDir    = flag.String("data-dir", "./data", "Path to the persistent data directory")
 	addr       = flag.String("addr", ":8080", "HTTP server address")
-	fcgiMu     sync.Mutex // Ensures serial execution since we have 1 persistent WASM instance
+	fcgiMu     sync.Mutex
 	fcgiIn     *os.File
 	fcgiOut    *os.File
 )
@@ -68,8 +68,8 @@ func main() {
 	wasi.InheritStderr()
 
 	wasi.SetEnv(
-		[]string{"PHP_FCGI_FORCE", "PHP_FCGI_MAX_REQUESTS", "PHP_WASM_WASI"},
-		[]string{"1", "0", "1"},
+		[]string{"PHP_FCGI_FORCE", "PHP_FCGI_MAX_REQUESTS", "PHP_WASM_WASI", "USE_ZEND_ALLOC"},
+		[]string{"1", "0", "1", "0"},
 	)
 
 	// Preopen /etc/php (for php.ini)
@@ -89,6 +89,7 @@ func main() {
 	}
 	// Preopen /tmp
 	tmpDir, _ := os.MkdirTemp("", "php-wasm-tmp-")
+	os.MkdirAll(filepath.Join(tmpDir, "opcache"), 0755)
 	if err := wasi.PreopenDir(tmpDir, "/tmp"); err != nil {
 		log.Fatalf("Failed to preopen /tmp: %v", err)
 	}

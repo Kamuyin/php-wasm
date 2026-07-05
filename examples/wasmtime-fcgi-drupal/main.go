@@ -20,13 +20,13 @@ import (
 )
 
 var (
-	wasmPath   = flag.String("wasm", "../../out/php-8.3.30-drupal.wasm", "Path to the PHP WASM binary")
-	docRoot    = flag.String("docroot", "./www", "Path to the document root")
-	dataDir    = flag.String("data-dir", "./data", "Path to the persistent data directory")
-	addr       = flag.String("addr", ":8080", "HTTP server address")
-	fcgiMu     sync.Mutex // Ensures serial execution since we have 1 persistent WASM instance
-	fcgiIn     *os.File
-	fcgiOut    *os.File
+	wasmPath = flag.String("wasm", "../../out/php-8.3.30-drupal.wasm", "Path to the PHP WASM binary")
+	docRoot  = flag.String("docroot", "./www", "Path to the document root")
+	dataDir  = flag.String("data-dir", "./data", "Path to the persistent data directory")
+	addr     = flag.String("addr", ":8080", "HTTP server address")
+	fcgiMu   sync.Mutex // Ensures serial execution since we have 1 persistent WASM instance
+	fcgiIn   *os.File
+	fcgiOut  *os.File
 )
 
 func main() {
@@ -34,7 +34,7 @@ func main() {
 	// umask. PHP's is_writable() on WASI checks mode bits directly, so 0700
 	// directories look unwritable to the installer without this.
 	syscall.Umask(0022)
-	
+
 	flag.Parse()
 
 	log.Printf("Loading WASM module from %s...", *wasmPath)
@@ -71,15 +71,15 @@ func main() {
 	if err := wasi.SetStdoutFile(fmt.Sprintf("/proc/self/fd/%d", stdoutW.Fd())); err != nil {
 		log.Fatalf("Failed to set stdout: %v", err)
 	}
-	
+
 	stderrLog, _ := os.Create("php-stderr.log")
 	if err := wasi.SetStderrFile(fmt.Sprintf("/proc/self/fd/%d", stderrLog.Fd())); err != nil {
 		log.Fatalf("Failed to set stderr: %v", err)
 	}
 
 	wasi.SetEnv(
-		[]string{"PHP_FCGI_FORCE", "PHP_FCGI_MAX_REQUESTS", "PHP_WASM_WASI"},
-		[]string{"1", "0", "1"},
+		[]string{"PHP_FCGI_FORCE", "PHP_FCGI_MAX_REQUESTS", "PHP_WASM_WASI", "USE_ZEND_ALLOC"},
+		[]string{"1", "0", "1", "0"},
 	)
 
 	// Preopen /etc/php (for php.ini)
@@ -99,6 +99,7 @@ func main() {
 	}
 	// Preopen /tmp
 	tmpDir, _ := os.MkdirTemp("", "php-wasm-tmp-")
+	os.MkdirAll(filepath.Join(tmpDir, "opcache"), 0755)
 	if err := wasi.PreopenDir(tmpDir, "/tmp"); err != nil {
 		log.Fatalf("Failed to preopen /tmp: %v", err)
 	}
@@ -162,7 +163,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	if urlPath == "/" || urlPath == "" {
 		urlPath = "/index.php"
 	}
-	
+
 	if blockedByPath(urlPath, blockedPaths) {
 		http.NotFound(w, r)
 		return
