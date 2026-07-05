@@ -1,0 +1,31 @@
+wasi: fix duplicate switch case in ext/fileinfo/libmagic/fsmagic.c
+
+wasi-libc's <sys/stat.h> (__mode_t.h) collapses S_IFSOCK and S_IFIFO to the
+same value (0xC000) because WASI Preview1 has neither real sockets nor FIFOs.
+libmagic's file_fsmagic() switches over st_mode with separate `case S_IFIFO`
+and `case S_IFSOCK` labels, so on WASI the second becomes a duplicate case
+value and the compile fails hard:
+
+    fsmagic.c:204:7: error: duplicate case value '49152'
+    fsmagic.c:171:7: note: previous case defined here
+
+Only emit the S_IFSOCK case when it is actually distinct from S_IFIFO. On a
+normal libc the two differ and both cases compile; on WASI the socket case is
+elided (a WASI file can never stat as a socket anyway).
+
+--- a/ext/fileinfo/libmagic/fsmagic.c
++++ b/ext/fileinfo/libmagic/fsmagic.c
+@@ -199,7 +199,12 @@
+ 	return 1;
+ #endif
+
+-#ifdef	S_IFSOCK
++/*
++ * WASI: wasi-libc defines S_IFSOCK == S_IFIFO (both 0xC000), which would make
++ * this a duplicate `case` value. Only compile the socket arm when the two
++ * macros are genuinely distinct.
++ */
++#if defined(S_IFSOCK) && (!defined(S_IFIFO) || (S_IFSOCK != S_IFIFO))
+ #ifndef __COHERENT__
+ 	case S_IFSOCK:
+ 		if (mime) {

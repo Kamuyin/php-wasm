@@ -23,6 +23,7 @@ php_patches:
   - "0005-wasi-zend-madvise"
   - "0006-wasi-zend-chunk-alloc"
   - "0007-wasi-fcgi-stdin-stdout"
+  - "0008-wasi-fileinfo-dup-case"
 
 # 0001: VMware WasmLabs master comprehensive WASI port (targeting 8.3)
 # 0002: four stubs absent from 0001 on 8.3.30 (php_do_chown, dup, socket_strerror, php_mail)
