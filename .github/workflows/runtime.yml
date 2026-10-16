@@ -1,0 +1,51 @@
+name: Native runtime acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/**'
+      - 'examples/runtime-observer/**'
+      - 'versions/8.3/**'
+      - 'patches/**'
+      - 'profiles/honeypot.yaml'
+      - 'scripts/**'
+      - 'docker/**'
+      - '.github/workflows/runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: runtime/host/go.mod
+          cache-dependency-path: runtime/host/go.sum
+      - name: Build instrumented and ordinary PHP 8.3
+        run: |
+          docker build --build-arg PHP_VERSION=8.3 --build-arg PROFILE=honeypot \
+            -t php-wasm-runtime -f docker/Dockerfile.builder .
+          mkdir -p out
+          docker run --rm --mount type=bind,src="$PWD/out",dst=/out \
+            --entrypoint bash php-wasm-runtime -c \
+            'set -euo pipefail
+             cd /build
+             scripts/build-lib.sh sqlite3
+             scripts/build-lib.sh libxml2
+             docker/entrypoint.sh
+             PROFILE=wordpress docker/entrypoint.sh'
+      - name: Check native runtime and reference host
+        run: |
+          export PHP_WASM_BINARY="$PWD/out/php-8.3.30-honeypot.wasm"
+          export PHP_WASM_ORDINARY_BINARY="$PWD/out/php-8.3.30-wordpress.wasm"
+          runtime/database/prepare.sh "$RUNNER_TEMP/php-database"
+          export PHP_WASM_DATABASE_BACKEND="$RUNNER_TEMP/php-database"
+          cd runtime/host
+          go test ./... -v -count=1 -timeout=5m
+          cd ../../examples/runtime-observer
+          go build ./...
