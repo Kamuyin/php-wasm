@@ -45,6 +45,14 @@ go run main.go --wasm ../../out/php-8.3.30-default.wasm --docroot ./www --addr :
 | `wordpress` | + xml, dom, simplexml, fileinfo, exif | ~7–8 MB |
 | `drupal` | Similar to wordpress | ~8 MB |
 | `full` | + gd, zip, openssl, exif, fileinfo | ~14 MB |
+| `honeypot` | PHP 8.3 WordPress extension set + native hooks and database facades | ~16 MB |
+
+The `honeypot` profile additionally requires the `php_wasm_runtime_v1` host
+interface. Its observation and injection hooks live in PHP core and expose no
+instrumentation PHP extension or functions. See [Native runtime hooks](docs/RUNTIME.md)
+for configuration, the reference Go host, evidence limits, and acceptance checks.
+The host can provide [embedded MySQL/PostgreSQL compatibility](docs/MYSQL.md)
+through a separate WASM database worker without a database server.
 
 ## Consumer Example (wazero / Go)
 
@@ -95,7 +103,7 @@ See `examples/wazero-cgi-minimal/` for a complete HTTP server example.
 | fork / exec / popen | Stubbed — returns `false` + `E_WARNING` |
 | opcache / JIT | Disabled — no RWX memory pages in WASM |
 | Threads | Not available |
-| MySQL / PostgreSQL | Not available — requires network sockets |
+| Remote MySQL / PostgreSQL servers | Unavailable; the `honeypot` profile provides embedded compatibility through its host |
 | PCRE JIT | Disabled |
 | `mail()` | Disabled |
 
@@ -104,6 +112,8 @@ See `examples/wazero-cgi-minimal/` for a complete HTTP server example.
 - [Building locally](docs/BUILDING.md)
 - [Architecture overview](docs/ARCHITECTURE.md)
 - [Consumer API contract](docs/CONSUMER_API.md)
+- [Native observation and injection](docs/RUNTIME.md)
+- [Embedded MySQL and PostgreSQL compatibility](docs/MYSQL.md)
 - [Adding a PHP version](docs/ADDING_VERSION.md)
 - [Updating patches](docs/UPDATING_PATCHES.md)
 - [WordPress guide](docs/WORDPRESS.md)

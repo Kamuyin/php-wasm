@@ -90,8 +90,16 @@ provide. These are handled in two ways:
 
 ## WASM Module Interface
 
-The output binary implements `wasi_snapshot_preview1` imports only.
-There are no custom imports beyond the standard WASI surface.
+Ordinary profiles implement `wasi_snapshot_preview1` imports only. The PHP 8.3
+`honeypot` profile also imports the private `php_wasm_runtime_v1` configuration,
+observation and database interface. `runtime/php_wasm_runtime.c` is compiled into PHP
+core through a guarded version patch; it registers no PHP extension or public
+instrumentation functions. See [RUNTIME.md](RUNTIME.md).
+
+Native database facades send bounded requests through the host to an ordinary
+PHP WASM worker running the dialect translator and SQLite. The worker's memory
+and persistent filesystem are separate from the application. See [MYSQL.md](MYSQL.md)
+for supported APIs, SQL limits and the host lifecycle contract.
 
 **Exports** (from `_start` / CGI SAPI):
 - `_start` — WASI command entry point; PHP reads env vars and stdin

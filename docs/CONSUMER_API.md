@@ -5,9 +5,18 @@ and their host runtimes (wazero, wasmtime, WasmEdge, etc.).
 
 ## WASM Module Imports
 
-The php-wasm binary imports **only** `wasi_snapshot_preview1` functions.
-There are no custom host imports. Any WASM runtime that implements
-WASI Preview1 can run these binaries without modification.
+Ordinary profiles import only `wasi_snapshot_preview1` functions. Any WASM
+runtime that implements WASI Preview1 can run those binaries without modification.
+
+The opt-in PHP 8.3 `honeypot` profile additionally imports
+`php_wasm_runtime_v1::config`, `php_wasm_runtime_v1::emit`, and
+`php_wasm_runtime_v1::database`. An embedding host
+must implement this versioned interface; see [RUNTIME.md](RUNTIME.md). It carries
+host-controlled observation/injection configuration and runtime evidence, with
+no application-accessible PHP API or event file.
+The database import serves the native MySQL/PostgreSQL facades through an isolated
+worker; see [MYSQL.md](MYSQL.md). Observation-only hosts still define the import
+and return `-1` to indicate that database compatibility is unavailable.
 
 Required WASI imports (subset actually used by php-cgi):
 
@@ -41,8 +50,11 @@ wasi_snapshot_preview1::poll_oneoff
 
 ## CGI Invocation Contract
 
-php-wasm runs as a **WASI Command** (not a Reactor). Each instantiation
-handles exactly one CGI request and exits.
+php-wasm runs as a **WASI Command** (not a Reactor). In CGI mode an instantiation
+handles one request and exits. The PHP 8.3 FastCGI port also supports persistent
+requests over stdin/stdout with `PHP_FCGI_FORCE=1` and `PHP_WASM_WASI=1`.
+`PHP_FCGI_MAX_REQUESTS=0` permits an unlimited request count; the host remains
+responsible for per-request resource limits and instance lifetime.
 
 ### Required Environment Variables
 
@@ -126,7 +138,7 @@ The host must parse this split and forward body + headers to the HTTP client.
 
 | Category | Guarantee |
 |----------|-----------|
-| WASI imports | Stable: always and only `wasi_snapshot_preview1` |
+| WASI imports | Ordinary profiles use only `wasi_snapshot_preview1`; the opt-in `honeypot` profile adds the versioned native runtime ABI |
 | `_start` export | Stable: always present in CGI builds |
 | CGI env var names | Stable: follows CGI/1.1 RFC |
 | PHP_WASM_TARGET | Stable: always `wasm32-wasi` |

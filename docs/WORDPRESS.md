@@ -1,6 +1,14 @@
 # WordPress on WASI PHP
 
-WordPress runs on php-wasm using the official
+The PHP 8.3 `honeypot` profile supports native MySQL compatibility, private runtime
+hooks and an isolated embedded database worker. Gimpel's WordPress 3.1.0 module
+uses this path without application-visible observation plugins or a `db.php`
+drop-in. See [MYSQL.md](MYSQL.md) and [RUNTIME.md](RUNTIME.md) for that integration.
+
+## Ordinary-profile example
+
+The standalone `examples/wazero-wordpress` example below uses the `wordpress`
+profile and the official
 [sqlite-database-integration](https://wordpress.org/plugins/sqlite-database-integration/)
 plugin as a `wp-content/db.php` drop-in. No MySQL, no network connection.
 
@@ -19,8 +27,17 @@ plugin as a `wp-content/db.php` drop-in. No MySQL, no network connection.
 | WordPress auto-updates | Disabled (`AUTOMATIC_UPDATER_DISABLED=true`) |
 | Remote wp-cron | Disabled (see [Cron](#cron) below) |
 | Image resizing / thumbnails | Not available — gd not in `wordpress` profile v1 |
-| MySQL / Postgres | Not available — no sockets in WASI Preview1 |
+| Remote MySQL / Postgres | Unavailable in this ordinary-profile example |
 | HTTPS / TLS | No — put a reverse proxy (nginx, Caddy) in front |
+
+Media uploads on PHP 8.3 require the `0005-83-wasi-temporary-files` patch.
+Rebuild older binaries: the original WASI port returned failure from temporary
+file creation. The patch uses WASI randomness and exclusive file creation within
+the host's admitted directories, and restores `sys_get_temp_dir()` handling.
+Mount a writable `/tmp` and set `sys_temp_dir` and `upload_tmp_dir` to `/tmp`.
+The native `honeypot` profile provides `chmod()` as an internal compatibility
+function that returns failure; WASI grants filesystem capabilities
+through preopens and cannot change Unix file permissions.
 
 ## Quick start
 
