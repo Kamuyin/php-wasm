@@ -106,6 +106,10 @@ apply_patch() {
     if [[ "${patch_exit}" -eq 0 ]]; then
         : # all good
     elif [[ "${patch_exit}" -eq 1 ]]; then
+        if [[ "${patch_name}" == 000[678]-83-*.patch ]]; then
+            echo "ERROR: Native runtime integration must apply completely; inspect the rejected hunk" >&2
+            exit 1
+        fi
         # exit 1 = some hunks rejected; usually means the change is already present
         echo "  WARNING: ${patch_name} — some hunks rejected (likely already applied)"
         find "${PHP_SRC}" -name "*.rej" -delete 2>/dev/null || true

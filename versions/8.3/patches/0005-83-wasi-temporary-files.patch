@@ -1,0 +1,91 @@
+--- a/main/php_open_temporary_file.c
++++ b/main/php_open_temporary_file.c
+@@ -16,6 +16,9 @@
+ 
+ #include "php.h"
+ #include "php_open_temporary_file.h"
++#ifdef __wasi__
++#include <wasi/api.h>
++#endif
+ 
+ #include <errno.h>
+ #include <sys/types.h>
+@@ -203,6 +206,42 @@
+ #else
+ static int php_do_open_temporary_file(const char *path, const char *pfx, zend_string **opened_path_p)
+ {
++  /* wasi-libc does not provide mkstemp. Create an unpredictable name and
++   * claim it exclusively inside an admitted preopen. Never follow an existing
++   * file/symlink or truncate a file when a name collides. */
++  unsigned char random[16];
++  char suffix[33], filename[MAXPATHLEN];
++  static const char hex[] = "0123456789abcdef";
++  if (!path || !*path) {
++    errno = ENOENT;
++    return -1;
++  }
++  for (int attempt = 0; attempt < 100; attempt++) {
++    if (__wasi_random_get(random, sizeof(random)) != __WASI_ERRNO_SUCCESS) {
++      errno = EIO;
++      return -1;
++    }
++    for (size_t i = 0; i < sizeof(random); i++) {
++      suffix[2*i] = hex[random[i] >> 4];
++      suffix[2*i+1] = hex[random[i] & 15];
++    }
++    suffix[32] = '\0';
++    if (snprintf(filename, sizeof(filename), "%s/%s%s", path, pfx, suffix) >= sizeof(filename)) {
++      errno = ENAMETOOLONG;
++      return -1;
++    }
++    int fd = VCWD_OPEN_MODE(filename, O_CREAT | O_EXCL | O_RDWR, 0600);
++    if (fd >= 0) {
++      if (opened_path_p) {
++        *opened_path_p = zend_string_init(filename, strlen(filename), 0);
++      }
++      return fd;
++    }
++    if (errno != EEXIST) {
++      return -1;
++    }
++  }
++  errno = EEXIST;
+   return -1;
+ }
+ #endif // __wasi__
+@@ -211,7 +250,6 @@
+ /*
+  *  Determine where to place temporary files.
+  */
+-#ifndef __wasi__
+ PHPAPI const char* php_get_temporary_directory(void)
+ {
+ 	/* Did we determine the temporary directory already? */
+@@ -276,7 +314,7 @@
+ 	}
+ #ifdef P_tmpdir
+ 	/* Use the standard default temporary directory. */
+-	if (P_tmpdir) {
++	if (P_tmpdir[0]) {
+ 		PG(php_sys_temp_dir) = estrdup(P_tmpdir);
+ 		return PG(php_sys_temp_dir);
+ 	}
+@@ -286,7 +324,6 @@
+ 	return PG(php_sys_temp_dir);
+ #endif
+ }
+-#endif // __wasi__
+ 
+ /* {{{ php_open_temporary_file
+  *
+--- a/wasi/main/php_open_temporary_file.c
++++ b/wasi/main/php_open_temporary_file.c
+@@ -14,7 +14,4 @@
+ 
+ #include "php.h"
+ 
+-PHPAPI const char* php_get_temporary_directory(void)
+-{
+-  return NULL;
+-}
++/* WASI uses the regular implementation in main/php_open_temporary_file.c. */

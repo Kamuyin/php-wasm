@@ -69,6 +69,10 @@ echo ""
 PATCHSET_KEY="$(
     {
         sha256sum "${VERSION_DIR}/config.yaml"
+        sha256sum "${PROFILE_FILE}" "${SCRIPT_DIR}/configure-php.sh"
+        find "${REPO_ROOT}/runtime" -maxdepth 1 -type f -name 'php_wasm_*' -print | sort | while read -r f; do
+            sha256sum "${f}"
+        done
         find "${REPO_ROOT}/patches/php" -maxdepth 1 -type f -name '*.patch' -print | sort | while read -r f; do
             sha256sum "${f}"
         done
@@ -93,6 +97,10 @@ fi
 # Step 2: Apply patches (idempotent via git state)
 echo "==> [2/6] Applying patches..."
 "${SCRIPT_DIR}/apply-patches.sh" "${VERSION}" "${PHP_SRC}"
+
+# Private source integration; ordinary profiles do not compile it or require
+# custom host imports. Keep the source outside the application filesystem.
+cp "${REPO_ROOT}"/runtime/php_wasm_*.[ch] "${PHP_SRC}/main/"
 
 # Step 3: Configure (configure-php.sh runs buildconf --force before ./configure)
 echo "==> [3/6] Configuring..."

@@ -38,6 +38,13 @@ CFLAGS="${CFLAGS} -DWASM_WASI=1"
 CFLAGS="${CFLAGS} -DPHP_WASM_PROFILE_NAME=\"${PROFILE}\""
 CFLAGS="${CFLAGS} -mno-exception-handling"
 CFLAGS="${CFLAGS} -I${REPO_ROOT}/stubs"
+if [[ "${PROFILE}" == "honeypot" ]]; then
+    if [[ "${VERSION}" != "8.3" ]]; then
+        echo "ERROR: The native runtime interface currently supports PHP 8.3 only" >&2
+        exit 1
+    fi
+    CFLAGS="${CFLAGS} -DPHP_WASM_RUNTIME=1"
+fi
 
 LDFLAGS="--sysroot=${WASI_SYSROOT}"
 LDFLAGS="${LDFLAGS} -lwasi-emulated-getpid"

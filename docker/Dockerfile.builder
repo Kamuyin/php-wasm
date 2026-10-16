@@ -139,6 +139,8 @@ COPY profiles/  /build/profiles/
 COPY libraries/ /build/libraries/
 COPY scripts/   /build/scripts/
 COPY docker/    /build/docker/
+COPY runtime/   /build/runtime/
+COPY stubs/     /build/stubs/
 
 RUN chmod +x /build/scripts/*.sh /build/docker/entrypoint.sh
 

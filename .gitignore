@@ -17,6 +17,8 @@ ccache/
 # Go build artifacts
 tests/runners/wazero/php-wasm-runner
 tests/runners/wazero/wazero
+examples/runtime-observer/runtime-observer
+examples/runtime-observer/observations.jsonl
 examples/wazero-cgi-minimal/php-server
 examples/wazero-cgi-minimal/wazero-cgi-minimal
 

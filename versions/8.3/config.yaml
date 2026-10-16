@@ -32,5 +32,9 @@ version_patches:
   - "0002-83-wasi-missing-stubs"
   - "0003-83-wasi-fastcgi-cgi-main"
   - "0004-83-wasi-fastcgi-main"
+  - "0005-83-wasi-temporary-files"
+  - "0006-83-native-runtime"
+  - "0007-83-wasi-standard-streams"
+  - "0008-83-native-provenance"
 
 notes: "Primary supported branch. Patches from VMware WasmLabs webassembly-language-runtimes/php/master."

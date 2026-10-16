@@ -1,0 +1,24 @@
+--- a/ext/standard/php_fopen_wrapper.c
++++ b/ext/standard/php_fopen_wrapper.c
+@@ -239,6 +239,21 @@
+ 		return php_stream_alloc(&php_stream_input_ops, input, 0, "rb");
+ 	}
+ 
++#ifdef __wasi__
++	/* WASI has no dup(). Borrow only the three standard descriptors and keep
++	 * their lifetime owned by the SAPI. Never permit arbitrary fd access. */
++	if (!strcasecmp(path, "stdin") || !strcasecmp(path, "stdout") || !strcasecmp(path, "stderr")) {
++		if ((options & STREAM_OPEN_FOR_INCLUDE) && !PG(allow_url_include)) {
++			return NULL;
++		}
++		fd = !strcasecmp(path, "stdin") ? STDIN_FILENO :
++			(!strcasecmp(path, "stdout") ? STDOUT_FILENO : STDERR_FILENO);
++		stream = php_stream_fopen_from_fd(fd, mode, NULL);
++		if (stream) stream->flags |= PHP_STREAM_FLAG_NO_CLOSE;
++		return stream;
++	}
++#endif
++
+ 	if (!strcasecmp(path, "stdin")) {
+ 		if ((options & STREAM_OPEN_FOR_INCLUDE) && !PG(allow_url_include) ) {
+ 			if (options & REPORT_ERRORS) {

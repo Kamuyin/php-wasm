@@ -1,0 +1,611 @@
+--- a/Zend/zend.h
++++ b/Zend/zend.h
+@@ -25,6 +25,9 @@
+ #define ZEND_ENGINE_3
+ 
+ #include "zend_types.h"
++#ifdef PHP_WASM_RUNTIME
++void php_wasm_provenance_merge(zend_string *out, zend_string *source, size_t offset);
++#endif
+ #include "zend_map_ptr.h"
+ #include "zend_errors.h"
+ #include "zend_alloc.h"
+--- a/Zend/zend_operators.c
++++ b/Zend/zend_operators.c
+@@ -2048,6 +2048,9 @@
+ 		size_t op1_len = ZSTR_LEN(op1_string);
+ 		size_t op2_len = ZSTR_LEN(op2_string);
+ 		size_t result_len = op1_len + op2_len;
++#ifdef PHP_WASM_RUNTIME
++        zend_string *pw_op2_origin = op2_string;
++#endif
+ 		zend_string *result_str;
+ 		uint32_t flags = ZSTR_GET_COPYABLE_CONCAT_PROPERTIES_BOTH(op1_string, op2_string);
+ 
+@@ -2093,6 +2096,10 @@
+ 		ZVAL_NEW_STR(result, result_str);
+ 		memcpy(ZSTR_VAL(result_str) + op1_len, ZSTR_VAL(op2_string), op2_len);
+ 		ZSTR_VAL(result_str)[result_len] = '\0';
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(result_str, op1_string, 0);
++		php_wasm_provenance_merge(result_str, pw_op2_origin, op1_len);
++#endif
+ 	}
+ 
+ 	if (free_op1_string) zend_string_release(op1_string);
+--- a/Zend/zend_vm_def.h
++++ b/Zend/zend_vm_def.h
+@@ -415,6 +415,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (OP2_TYPE & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -424,6 +428,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (OP1_TYPE & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -3210,6 +3218,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (OP2_TYPE & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -3219,6 +3231,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (OP1_TYPE & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -3281,6 +3297,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if (OP1_TYPE != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -3414,6 +3434,10 @@
+ 
+ 	char *target = Z_STRVAL_P(ret);
+ 	for (i = 0; i <= opline->extended_value; i++) {
++		
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(Z_STR_P(ret), rope[i], target - Z_STRVAL_P(ret));
++#endif
+ 		memcpy(target, ZSTR_VAL(rope[i]), ZSTR_LEN(rope[i]));
+ 		target += ZSTR_LEN(rope[i]);
+ 		zend_string_release_ex(rope[i], 0);
+--- a/Zend/zend_vm_execute.h
++++ b/Zend/zend_vm_execute.h
+@@ -6700,6 +6700,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -6709,6 +6713,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -6771,6 +6779,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if (IS_CONST != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -8806,6 +8818,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -8815,6 +8831,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -9231,6 +9251,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -9240,6 +9264,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -9302,6 +9330,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if (IS_CONST != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -11205,6 +11237,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -11214,6 +11250,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -11630,6 +11670,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -11639,6 +11683,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -11701,6 +11749,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if (IS_CONST != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -15255,6 +15307,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -15264,6 +15320,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -15994,6 +16054,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -16003,6 +16067,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -16065,6 +16133,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if ((IS_TMP_VAR|IS_VAR) != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -16700,6 +16772,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -16709,6 +16785,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -17439,6 +17519,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -17448,6 +17532,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -17510,6 +17598,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if ((IS_TMP_VAR|IS_VAR) != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -18422,6 +18514,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -18431,6 +18527,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -18799,6 +18899,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -18808,6 +18912,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -18870,6 +18978,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if ((IS_TMP_VAR|IS_VAR) != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -20055,6 +20167,10 @@
+ 
+ 	char *target = Z_STRVAL_P(ret);
+ 	for (i = 0; i <= opline->extended_value; i++) {
++		
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(Z_STR_P(ret), rope[i], target - Z_STRVAL_P(ret));
++#endif
+ 		memcpy(target, ZSTR_VAL(rope[i]), ZSTR_LEN(rope[i]));
+ 		target += ZSTR_LEN(rope[i]);
+ 		zend_string_release_ex(rope[i], 0);
+@@ -20537,6 +20653,10 @@
+ 
+ 	char *target = Z_STRVAL_P(ret);
+ 	for (i = 0; i <= opline->extended_value; i++) {
++		
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(Z_STR_P(ret), rope[i], target - Z_STRVAL_P(ret));
++#endif
+ 		memcpy(target, ZSTR_VAL(rope[i]), ZSTR_LEN(rope[i]));
+ 		target += ZSTR_LEN(rope[i]);
+ 		zend_string_release_ex(rope[i], 0);
+@@ -21404,6 +21524,10 @@
+ 
+ 	char *target = Z_STRVAL_P(ret);
+ 	for (i = 0; i <= opline->extended_value; i++) {
++		
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(Z_STR_P(ret), rope[i], target - Z_STRVAL_P(ret));
++#endif
+ 		memcpy(target, ZSTR_VAL(rope[i]), ZSTR_LEN(rope[i]));
+ 		target += ZSTR_LEN(rope[i]);
+ 		zend_string_release_ex(rope[i], 0);
+@@ -40871,6 +40995,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -40880,6 +41008,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -43417,6 +43549,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CONST & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -43426,6 +43562,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -43488,6 +43628,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if (IS_CV != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -44742,6 +44886,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -44751,6 +44899,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -47199,6 +47351,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if ((IS_TMP_VAR|IS_VAR) & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -47208,6 +47364,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -47270,6 +47430,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if (IS_CV != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}
+@@ -50109,6 +50273,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -50118,6 +50286,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -52688,6 +52860,10 @@
+ 			memcpy(ZSTR_VAL(str) + len, ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op2_str, 0);
+ 			}
+@@ -52697,6 +52873,10 @@
+ 			memcpy(ZSTR_VAL(str) + ZSTR_LEN(op1_str), ZSTR_VAL(op2_str), ZSTR_LEN(op2_str)+1);
+ 			GC_ADD_FLAGS(str, flags);
+ 			ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 			if (IS_CV & (IS_TMP_VAR|IS_VAR)) {
+ 				zend_string_release_ex(op1_str, 0);
+ 			}
+@@ -52759,6 +52939,10 @@
+ 
+ 		ZSTR_COPY_CONCAT_PROPERTIES_BOTH(str, op1_str, op2_str);
+ 		ZVAL_NEW_STR(EX_VAR(opline->result.var), str);
++#ifdef PHP_WASM_RUNTIME
++		php_wasm_provenance_merge(str, op1_str, 0);
++		php_wasm_provenance_merge(str, op2_str, ZSTR_LEN(str) - ZSTR_LEN(op2_str));
++#endif
+ 		if (IS_CV != IS_CONST) {
+ 			zend_string_release_ex(op1_str, 0);
+ 		}

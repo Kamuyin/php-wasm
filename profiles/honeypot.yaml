@@ -1,17 +1,18 @@
 # $schema: ../schemas/profile.schema.json
 name: "honeypot"
-description: "Honeypot profile: default + Observer API extension (TODO: not yet implemented)"
+description: "PHP 8.3 with private host-controlled observation and injection hooks"
 
 configure_flags:
   - "--enable-mbstring"
-  - "--enable-json"
+  - "--disable-mbregex"
   - "--enable-ctype"
   - "--enable-filter"
   - "--enable-tokenizer"
-  - "--enable-phar"
+  - "--enable-session"
   - "--enable-pdo"
-  - "--with-pdo-sqlite=/usr"
-  - "--with-sqlite3=/usr"
+  - "--with-pdo-sqlite=deps/sqlite3-wasm"
+  - "--with-sqlite3=deps/sqlite3-wasm"
+  - "--with-libxml=deps/libxml2-wasm"
   - "--enable-xml"
   - "--enable-dom"
   - "--enable-simplexml"
@@ -19,7 +20,8 @@ configure_flags:
   - "--enable-xmlwriter"
   - "--enable-bcmath"
   - "--enable-calendar"
-  # TODO: --with-ext-honeypot=shared when the extension is implemented
+  - "--enable-fileinfo"
+  - "--enable-exif"
 
 extensions_snapshot:
   - json
@@ -27,9 +29,13 @@ extensions_snapshot:
   - ctype
   - filter
   - tokenizer
-  - phar
+  - session
   - pdo
   - pdo_sqlite
+  - mysqli
+  - pgsql
+  - pdo_mysql
+  - pdo_pgsql
   - sqlite3
   - xml
   - dom
@@ -38,13 +44,14 @@ extensions_snapshot:
   - xmlwriter
   - bcmath
   - calendar
-  # TODO: honeypot
+  - fileinfo
+  - exif
 
-expected_wasm_size_kb: 7700
+required_libs: [sqlite3, libxml2]
+expected_wasm_size_kb: 17000
 
 notes: |
-  TODO: The honeypot Observer API extension is not yet implemented.
-  When complete, it will use zend_observer_fcall_install() to intercept
-  all function calls and stream them via a WASI fd to an out-of-process
-  analyzer. The extension will be a standalone .c file in ext/honeypot/.
-  For now this profile is identical to default. Do not use in production.
+  PHP 8.3 only. Requires the php_wasm_runtime_v1 host import module in addition
+  to WASI Preview1. No instrumentation extension, PHP functions, INI entries,
+  application files or WordPress plugins are registered. Explicitly injected
+  scripts can create visible application state. See docs/RUNTIME.md.
