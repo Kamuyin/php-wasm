@@ -1,0 +1,47 @@
+--- a/ext/openssl/xp_ssl.c
++++ b/ext/openssl/xp_ssl.c
+@@ -1,3 +1,4 @@
++#ifndef __wasi__ /* Preview1 has no socket transports. */
+ /*
+   +----------------------------------------------------------------------+
+   | Copyright (c) The PHP Group                                          |
+@@ -2882,3 +2883,5 @@
+ 	return stream;
+ }
+ /* }}} */
++
++#endif /* !__wasi__ */
+--- a/ext/openssl/openssl.c
++++ b/ext/openssl/openssl.c
+@@ -1301,6 +1301,7 @@
+ 		strlcpy(default_ssl_conf_filename, config_filename, sizeof(default_ssl_conf_filename));
+ 	}
+ 
++#ifndef __wasi__
+ 	php_stream_xport_register("ssl", php_openssl_ssl_socket_factory);
+ #ifndef OPENSSL_NO_SSL3
+ 	php_stream_xport_register("sslv3", php_openssl_ssl_socket_factory);
+@@ -1318,6 +1319,7 @@
+ 
+ 	php_register_url_stream_wrapper("https", &php_stream_http_wrapper);
+ 	php_register_url_stream_wrapper("ftps", &php_stream_ftp_wrapper);
++#endif /* !__wasi__ */
+ 
+ 	REGISTER_INI_ENTRIES();
+ 
+@@ -1380,6 +1382,7 @@
+ 	CONF_modules_free();
+ #endif
+ 
++#ifndef __wasi__
+ 	php_unregister_url_stream_wrapper("https");
+ 	php_unregister_url_stream_wrapper("ftps");
+ 
+@@ -1397,6 +1400,7 @@
+ 
+ 	/* reinstate the default tcp handler */
+ 	php_stream_xport_register("tcp", php_stream_generic_socket_factory);
++#endif /* !__wasi__ */
+ 
+ 	UNREGISTER_INI_ENTRIES();
+ 

@@ -46,6 +46,8 @@ go run main.go --wasm ../../out/php-8.3.30-default.wasm --docroot ./www --addr :
 | `drupal` | Similar to wordpress | ~8 MB |
 | `full` | + gd, zip, openssl, exif, fileinfo | ~14 MB |
 | `honeypot` | PHP 8.3 WordPress extension set + native hooks and database facades | ~16 MB |
+| `moodle` | PHP 8.3, 64-bit integers, native hooks, iconv/curl/openssl/zip/zlib/gd/intl/sodium | ~56 MB |
+| `moodle-database` | Private SQL worker with 64-bit integers; ordinary WASI imports | ~16 MB |
 
 The `honeypot` profile additionally requires the `php_wasm_runtime_v1` host
 interface. Its observation and injection hooks live in PHP core and expose no
@@ -53,6 +55,26 @@ instrumentation PHP extension or functions. See [Native runtime hooks](docs/RUNT
 for configuration, the reference Go host, evidence limits, and acceptance checks.
 The host can provide [embedded MySQL/PostgreSQL compatibility](docs/MYSQL.md)
 through a separate WASM database worker without a database server.
+
+For Moodle, use WASI SDK 34 and Wasmtime. Build SQLite and libxml2 as described
+in [Building](docs/BUILDING.md), then run:
+
+```bash
+scripts/build-moodle-deps.sh
+scripts/build.sh 8.3 moodle --no-wasm-opt --jobs 8
+scripts/build.sh 8.3 moodle-database --no-wasm-opt --jobs 8
+```
+
+The dependency builder needs native C/C++ compilers, CMake, Make, Autoconf,
+Automake, libtool, pkg-config, Perl, Python 3, curl and tar. Set `WASI_SDK_PATH`
+to the SDK directory. Sources are pinned by URL and SHA-256 in
+`libraries/moodle.lock.json`; archives are cached under `~/.cache/php-wasm`.
+PHP integers are 64-bit while WASI pointers stay 32-bit. ICU includes locale
+data. OpenSSL supports cryptography without TLS socket streams; curl supports
+local file transfers and reports errors for DNS/outbound connections. GD
+supports PNG/GIF/BMP, without JPEG/WebP/FreeType. This profile is intended for
+an isolated honeypot, with no outbound mail, remote downloads or web services.
+The Moodle profile has been exercised with Wasmtime; wazero is unsupported.
 
 ## Consumer Example (wazero / Go)
 

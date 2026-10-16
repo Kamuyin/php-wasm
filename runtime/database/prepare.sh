@@ -18,4 +18,8 @@ mkdir -p "${DEST}/mysql"
 cp -R "${TEMP}/sqlite-database-integration/wp-includes/database/." "${DEST}/mysql/"
 cp "${TEMP}/sqlite-database-integration/LICENSE" "${DEST}/mysql/LICENSE"
 cp "${ROOT}/runtime/database/worker.php" "${DEST}/worker.php"
+# Private compatibility metadata: SQLite already supports the Unicode/key-size
+# behavior Moodle checks through these InnoDB variables. Physical storage stays
+# in the instance-private SQLite database. Query/resource limits are unchanged.
+patch --batch -d "${DEST}" -p1 < "${ROOT}/runtime/database/mysql-compat.patch"
 printf '%s\n' 'SQLite Database Integration 3.0.2, GPL-2.0-or-later' "Archive SHA256: ${SHA}" > "${DEST}/mysql/UPSTREAM.txt"

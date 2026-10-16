@@ -1,0 +1,78 @@
+# $schema: ../schemas/profile.schema.json
+name: "moodle"
+description: "Moodle PHP 8.3 with 64-bit integers and private native observation"
+
+configure_flags:
+  - "--enable-mbstring"
+  - "--disable-mbregex"
+  - "--enable-ctype"
+  - "--enable-filter"
+  - "--enable-tokenizer"
+  - "--enable-session"
+  - "--enable-pdo"
+  - "--with-pdo-sqlite=deps/sqlite3-wasm"
+  - "--with-sqlite3=deps/sqlite3-wasm"
+  - "--with-libxml=deps/libxml2-wasm"
+  - "--enable-xml"
+  - "--enable-dom"
+  - "--enable-simplexml"
+  - "--enable-xmlreader"
+  - "--enable-xmlwriter"
+  - "--enable-bcmath"
+  - "--enable-calendar"
+  - "--enable-fileinfo"
+  - "--enable-exif"
+  - "--with-iconv=deps/moodle-wasm"
+  - "--with-zlib=deps/moodle-wasm"
+  - "--enable-gd"
+  - "--with-zip"
+  - "--with-sodium"
+  - "--with-openssl"
+  - "--enable-intl"
+  - "--with-curl"
+
+extensions_snapshot:
+  - json
+  - mbstring
+  - ctype
+  - filter
+  - tokenizer
+  - session
+  - pdo
+  - pdo_sqlite
+  - mysqli
+  - pgsql
+  - pdo_mysql
+  - pdo_pgsql
+  - sqlite3
+  - xml
+  - dom
+  - simplexml
+  - xmlreader
+  - xmlwriter
+  - bcmath
+  - calendar
+  - fileinfo
+  - exif
+  - iconv
+  - zlib
+  - gd
+  - zip
+  - sodium
+  - openssl
+  - intl
+  - curl
+
+required_libs: [sqlite3, libxml2]
+expected_wasm_size_kb: 60000
+
+notes: |
+  PHP 8.3 only. Requires the php_wasm_runtime_v1 host import module in addition
+  to WASI Preview1. No instrumentation extension, PHP functions, INI entries,
+  application files or WordPress plugins are registered. Explicitly injected
+  scripts can create visible application state. See docs/RUNTIME.md.
+  First build SQLite/libxml2 and scripts/build-moodle-deps.sh with WASI SDK 34.
+  PHP integers are 64-bit; WASI pointers remain 32-bit. Use Wasmtime.
+  OpenSSL provides cryptographic operations without socket transports. Curl
+  retains its API and file transfers; DNS and outbound sockets fail normally.
+  GD supports PNG/GIF/BMP, without JPEG, WebP, or FreeType.

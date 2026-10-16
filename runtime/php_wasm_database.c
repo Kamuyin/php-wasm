@@ -19,7 +19,7 @@ typedef struct {
     zval owner, params, response, bound_results;
     zend_string *sql, *param_types;
     zend_long connection, row, field;
-    bool closed, postgres;
+    bool closed, postgres, more_results;
     zend_object std;
 } pw_db_object;
 
@@ -78,9 +78,9 @@ static bool pw_db_connect(zend_long *id,bool postgres,const char *database,zval 
     add_assoc_string(&request,"driver",postgres?"pgsql":"mysql");add_assoc_string(&request,"database",(char *)(database && *database?database:"wordpress"));
     bool ok=pw_db_exchange(&request,response);if(ok)*id=pw_db_long(response,"connection");zval_ptr_dtor(&request);return ok;
 }
-static bool pw_db_query(zend_long id,zend_string *sql,zval *params,bool prepare,zval *response) {
+static bool pw_db_query_op(zend_long id,zend_string *sql,zval *params,const char *operation,zval *response) {
     zval request,values;array_init(&request);array_init(&values);
-    add_assoc_string(&request,"op",prepare?"prepare":"query");add_assoc_long(&request,"connection",id);
+    add_assoc_string(&request,"op",(char *)operation);add_assoc_long(&request,"connection",id);
     add_assoc_str(&request,"sql_b64",php_base64_encode((unsigned char *)ZSTR_VAL(sql),ZSTR_LEN(sql)));
     if (params && Z_TYPE_P(params)==IS_ARRAY) {
         zend_string *key;zend_ulong index;zval *value;
@@ -96,6 +96,7 @@ static bool pw_db_query(zend_long id,zend_string *sql,zval *params,bool prepare,
     if(EG(exception))ZVAL_UNDEF(response);
     zval_ptr_dtor(&request);return ok;
 }
+static bool pw_db_query(zend_long id,zend_string *sql,zval *params,bool prepare,zval *response) { return pw_db_query_op(id,sql,params,prepare?"prepare":"query",response); }
 static void pw_db_disconnect(zend_long id) {
     if(!id || !pw_active)return;
     zval request,response;array_init(&request);add_assoc_string(&request,"op","close");add_assoc_long(&request,"connection",id);
@@ -199,8 +200,9 @@ static PHP_FUNCTION(pw_mysqli_call)
         if(pw_connect_error){zend_string_release(pw_connect_error);pw_connect_error=NULL;}
         if(!ok)pw_connect_error=zend_string_init(pw_db_text(&response,"error","Connection failed"),strlen(pw_db_text(&response,"error","Connection failed")),0);
         pw_db_prop_long(o,"connect_errno",pw_connect_errno);if(pw_connect_error)pw_db_prop_string(o,"connect_error",ZSTR_VAL(pw_connect_error));
-        pw_db_status(o,&response,ok);zval_ptr_dtor(&response);
-        if(ok){pw_db_prop_string(o,"server_info","8.0.38");pw_db_prop_long(o,"server_version",80038);pw_db_prop_string(o,"host_info","Localhost via UNIX socket");pw_db_prop_long(o,"protocol_version",10);pw_db_prop_long(o,"thread_id",o->connection);pw_db_prop_long(o,"connect_errno",0);}
+        pw_db_status(o,&response,ok);
+        if(ok){pw_db_prop_string(o,"server_info",pw_db_text(&response,"server_version","8.0.38"));pw_db_prop_long(o,"server_version",pw_field(&response,"server_version_id")?pw_db_long(&response,"server_version_id"):80038);pw_db_prop_string(o,"host_info","Localhost via UNIX socket");pw_db_prop_long(o,"protocol_version",10);pw_db_prop_long(o,"thread_id",o->connection);pw_db_prop_long(o,"connect_errno",0);}
+        zval_ptr_dtor(&response);
         if(method && constructing)return;if(!constructing)RETURN_BOOL(ok);if(!ok){zval_ptr_dtor(return_value);RETVAL_FALSE;}return;
     }
     if(!strcmp(name,"close") || !strcmp(name,"free") || !strcmp(name,"free_result")){
@@ -211,11 +213,17 @@ static PHP_FUNCTION(pw_mysqli_call)
     if(!strcmp(name,"options") || !strcmp(name,"set_opt")){zval *option=pw_db_arg(execute_data,base);RETURN_BOOL(option && (zval_get_long(option)==0 || zval_get_long(option)==7));}
     if(!strcmp(name,"set_charset")){const char *charset=pw_db_argtext(execute_data,base,"");RETURN_BOOL(!strcmp(charset,"utf8mb4") || !strcmp(charset,"utf8") || !strcmp(charset,"latin1"));}
     if(!strcmp(name,"character_set_name"))RETURN_STRING("utf8mb4");
-    if(!strcmp(name,"get_server_info"))RETURN_STRING("8.0.38");
-    if(!strcmp(name,"get_server_version"))RETURN_LONG(80038);
+    if(!strcmp(name,"get_server_info")){zval rv;zval *v=zend_read_property(o->std.ce,&o->std,"server_info",11,0,&rv);RETURN_COPY(v);}
+    if(!strcmp(name,"get_server_version")){zval rv;zval *v=zend_read_property(o->std.ce,&o->std,"server_version",14,0,&rv);RETURN_COPY(v);}
     if(!strcmp(name,"get_host_info"))RETURN_STRING("Localhost via UNIX socket");
     if(!strcmp(name,"get_proto_info"))RETURN_LONG(10);
-    if(!strcmp(name,"more_results") || !strcmp(name,"next_result"))RETURN_FALSE;
+    if(!strcmp(name,"more_results"))RETURN_BOOL(o->more_results);
+    if(!strcmp(name,"next_result")){
+        if(!o->more_results)RETURN_FALSE;
+        zval request,response;array_init(&request);add_assoc_string(&request,"op","next_result");add_assoc_long(&request,"connection",o->connection);
+        bool ok=pw_db_exchange(&request,&response);zval *more=pw_field(&response,"more_results");o->more_results=ok && more && zend_is_true(more);
+        pw_db_status(o,&response,ok);zval_ptr_dtor(&request);zval_ptr_dtor(&response);RETURN_BOOL(ok);
+    }
     if(!strcmp(name,"select_db")){
         zval response;zend_long previous=o->connection;bool ok=pw_db_connect(&o->connection,false,pw_db_argtext(execute_data,base,"wordpress"),&response);
         if(ok)pw_db_disconnect(previous);pw_db_status(o,&response,ok);zval_ptr_dtor(&response);RETURN_BOOL(ok);
@@ -238,7 +246,7 @@ static PHP_FUNCTION(pw_mysqli_call)
         zval_ptr_dtor(dest);array_init(dest);
         for(uint32_t i=start;i<ZEND_CALL_NUM_ARGS(execute_data);i++){zval copy;ZVAL_COPY(&copy,ZEND_CALL_ARG(execute_data,i+1));add_next_index_zval(dest,&copy);}RETURN_TRUE;
     }
-    if(!strcmp(name,"query") || !strcmp(name,"real_query") || !strcmp(name,"prepare") || !strcmp(name,"execute") || !strcmp(name,"execute_query") || !strcmp(name,"begin_transaction") || !strcmp(name,"commit") || !strcmp(name,"rollback")){
+    if(!strcmp(name,"multi_query") || !strcmp(name,"query") || !strcmp(name,"real_query") || !strcmp(name,"prepare") || !strcmp(name,"execute") || !strcmp(name,"execute_query") || !strcmp(name,"begin_transaction") || !strcmp(name,"commit") || !strcmp(name,"rollback")){
         bool prepared=!strcmp(name,"prepare"),execute=!strcmp(name,"execute");
         zend_string *sql=NULL;zval *params=NULL;
         if(execute){sql=o->sql?zend_string_copy(o->sql):NULL;params=pw_db_arg(execute_data,base);if(!params)params=&o->params;}
@@ -255,10 +263,11 @@ static PHP_FUNCTION(pw_mysqli_call)
                 add_next_index_zval(&coerced,&copy);
             }ZEND_HASH_FOREACH_END();params=&coerced;
         }
-        zval response;bool ok=pw_db_query(o->connection,sql,params,prepared,&response);
+        zval response;bool multi=!strcmp(name,"multi_query");bool ok=multi?pw_db_query_op(o->connection,sql,params,"multi_query",&response):pw_db_query(o->connection,sql,params,prepared,&response);
+        if(multi){zval *more=pw_field(&response,"more_results");o->more_results=ok && more && zend_is_true(more);}
         if(!Z_ISUNDEF(coerced))zval_ptr_dtor(&coerced);pw_db_status(o,&response,ok);
         if(ok && prepared){object_init_ex(return_value,pw_stmt_ce);pw_db_object *stmt=pw_db_obj(Z_OBJ_P(return_value));stmt->connection=o->connection;stmt->sql=zend_string_copy(sql);ZVAL_OBJ_COPY(&stmt->owner,&o->std);}
-        else if(ok){zval *columns=pw_field(&response,"columns");if(!execute && strcmp(name,"real_query") && columns && zend_hash_num_elements(Z_ARRVAL_P(columns)))pw_db_result(return_value,o,&response,false);else RETVAL_TRUE;}
+        else if(ok){zval *columns=pw_field(&response,"columns");if(!execute && !multi && strcmp(name,"real_query") && columns && zend_hash_num_elements(Z_ARRVAL_P(columns)))pw_db_result(return_value,o,&response,false);else RETVAL_TRUE;}
         else RETVAL_FALSE;
         if(!Z_ISUNDEF(response))zval_ptr_dtor(&response);zend_string_release(sql);return;
     }
@@ -365,7 +374,7 @@ static PHP_FUNCTION(pw_pg_call)
     zend_throw_error(NULL,"This PostgreSQL operation is unavailable");RETURN_THROWS();
 }
 
-typedef struct { zend_long connection;bool postgres;zval response; } pw_pdo_db;
+typedef struct { zend_long connection;bool postgres;zval response;zend_string *server_version; } pw_pdo_db;
 typedef struct { zend_string *sql;zval response;zend_long row; } pw_pdo_stmt;
 
 static void pw_pdo_error(pdo_dbh_t *dbh,pdo_stmt_t *stmt,zval *response) {
@@ -405,7 +414,7 @@ static bool pw_pdo_prepare(pdo_dbh_t *dbh,zend_string *sql,pdo_stmt_t *stmt,zval
     pw_pdo_db *db=dbh->driver_data;zval response;bool ok=pw_db_query(db->connection,sql,NULL,true,&response);
     if(!ok && !Z_ISUNDEF(response))pw_pdo_error(dbh,stmt,&response);if(!Z_ISUNDEF(response))zval_ptr_dtor(&response);return ok;
 }
-static void pw_pdo_close(pdo_dbh_t *dbh){pw_pdo_db *db=dbh->driver_data;if(db){pw_db_disconnect(db->connection);zval_ptr_dtor(&db->response);efree(db);dbh->driver_data=NULL;}}
+static void pw_pdo_close(pdo_dbh_t *dbh){pw_pdo_db *db=dbh->driver_data;if(db){pw_db_disconnect(db->connection);zval_ptr_dtor(&db->response);if(db->server_version)zend_string_release(db->server_version);efree(db);dbh->driver_data=NULL;}}
 static zend_long pw_pdo_exec(pdo_dbh_t *dbh,const zend_string *sql){pw_pdo_db *db=dbh->driver_data;zval response;bool ok=pw_db_query(db->connection,(zend_string*)sql,NULL,false,&response);zend_long count=-1;if(ok){count=pw_db_long(&response,"affected_rows");zval_ptr_dtor(&db->response);ZVAL_COPY(&db->response,&response);}else if(!Z_ISUNDEF(response))pw_pdo_error(dbh,NULL,&response);if(!Z_ISUNDEF(response))zval_ptr_dtor(&response);return count;}
 static bool pw_pdo_transaction(pdo_dbh_t *dbh,const char *sql){zend_string *text=zend_string_init(sql,strlen(sql),0);bool ok=pw_pdo_exec(dbh,text)>=0;zend_string_release(text);return ok;}
 static bool pw_pdo_begin(pdo_dbh_t *dbh){return pw_pdo_transaction(dbh,((pw_pdo_db*)dbh->driver_data)->postgres?"BEGIN":"START TRANSACTION");}
@@ -419,7 +428,7 @@ static zend_string *pw_pdo_quote(pdo_dbh_t *dbh,const zend_string *input,enum pd
 }
 static zend_string *pw_pdo_last_id(pdo_dbh_t *dbh,const zend_string *name){pw_pdo_db *db=dbh->driver_data;zval *value=pw_field(&db->response,"insert_id");return value?zval_get_string(value):zend_string_init("0",1,0);}
 static void pw_pdo_fetch_error(pdo_dbh_t *dbh,pdo_stmt_t *stmt,zval *info){pw_pdo_db *db=dbh->driver_data;add_next_index_long(info,pw_db_long(&db->response,"errno"));add_next_index_string(info,pw_db_text(&db->response,"error",""));}
-static int pw_pdo_attr(pdo_dbh_t *dbh,zend_long attr,zval *out){pw_pdo_db *db=dbh->driver_data;switch(attr){case PDO_ATTR_SERVER_VERSION:ZVAL_STRING(out,db->postgres?"16.4":"8.0.38");return 1;case PDO_ATTR_CLIENT_VERSION:ZVAL_STRING(out,db->postgres?"16.4":"mysqlnd 8.3.30");return 1;case PDO_ATTR_CONNECTION_STATUS:ZVAL_STRING(out,"Localhost via UNIX socket");return 1;case PDO_ATTR_EMULATE_PREPARES:ZVAL_BOOL(out,!db->postgres);return 1;default:return 0;}}
+static int pw_pdo_attr(pdo_dbh_t *dbh,zend_long attr,zval *out){pw_pdo_db *db=dbh->driver_data;switch(attr){case PDO_ATTR_SERVER_VERSION:if(db->server_version)ZVAL_STR_COPY(out,db->server_version);else ZVAL_STRING(out,db->postgres?"16.4":"8.0.38");return 1;case PDO_ATTR_CLIENT_VERSION:ZVAL_STRING(out,db->postgres?"16.4":"mysqlnd 8.3.30");return 1;case PDO_ATTR_CONNECTION_STATUS:ZVAL_STRING(out,"Localhost via UNIX socket");return 1;case PDO_ATTR_EMULATE_PREPARES:ZVAL_BOOL(out,!db->postgres);return 1;default:return 0;}}
 static bool pw_pdo_set_attr(pdo_dbh_t *dbh,zend_long attr,zval *value){return attr==PDO_ATTR_EMULATE_PREPARES && zend_is_true(value)==!((pw_pdo_db*)dbh->driver_data)->postgres;}
 static const struct pdo_dbh_methods pw_pdo_methods={.closer=pw_pdo_close,.preparer=pw_pdo_prepare,.doer=pw_pdo_exec,.quoter=pw_pdo_quote,.begin=pw_pdo_begin,.commit=pw_pdo_commit,.rollback=pw_pdo_rollback,.set_attribute=pw_pdo_set_attr,.last_id=pw_pdo_last_id,.fetch_err=pw_pdo_fetch_error,.get_attribute=pw_pdo_attr};
 static int pw_pdo_factory(pdo_dbh_t *dbh,zval *options,bool postgres){
@@ -428,7 +437,7 @@ static int pw_pdo_factory(pdo_dbh_t *dbh,zval *options,bool postgres){
     if(dbh->is_persistent){pdo_raise_impl_error(dbh,NULL,"IM001","Persistent connections are unavailable");return 0;}
     pw_pdo_db *db=ecalloc(1,sizeof(*db));db->postgres=postgres;array_init(&db->response);dbh->driver_data=db;dbh->methods=&pw_pdo_methods;dbh->alloc_own_columns=1;dbh->max_escaped_char_length=2;
     struct pdo_data_src_parser vars[]={{"dbname","wordpress",0}};php_pdo_parse_data_source(dbh->data_source,dbh->data_source_len,vars,1);
-    zval response;bool ok=pw_db_connect(&db->connection,db->postgres,vars[0].optval,&response);if(!ok)pw_pdo_error(dbh,NULL,&response);zval_ptr_dtor(&response);if(vars[0].freeme)efree(vars[0].optval);return ok;
+    zval response;bool ok=pw_db_connect(&db->connection,db->postgres,vars[0].optval,&response);if(!ok)pw_pdo_error(dbh,NULL,&response);else {const char *v=pw_db_text(&response,"server_version",db->postgres?"16.4":"8.0.38");db->server_version=zend_string_init(v,strlen(v),0);}zval_ptr_dtor(&response);if(vars[0].freeme)efree(vars[0].optval);return ok;
 }
 static int pw_pdo_mysql_factory(pdo_dbh_t *dbh,zval *options){return pw_pdo_factory(dbh,options,false);}
 static const pdo_driver_t pw_pdo_mysql_driver={PDO_DRIVER_HEADER(mysql),pw_pdo_mysql_factory};
@@ -440,6 +449,7 @@ static const zend_function_entry pw_mysqli_functions[]={
     ZEND_FENTRY(mysqli_init,zif_pw_mysqli_call,pw_db_args,0)
     ZEND_FENTRY(mysqli_real_connect,zif_pw_mysqli_call,pw_db_args,0)
     ZEND_FENTRY(mysqli_close,zif_pw_mysqli_call,pw_db_args,0)
+    ZEND_FENTRY(mysqli_multi_query,zif_pw_mysqli_call,pw_db_args,0)
     ZEND_FENTRY(mysqli_query,zif_pw_mysqli_call,pw_db_args,0)
     ZEND_FENTRY(mysqli_real_query,zif_pw_mysqli_call,pw_db_args,0)
     ZEND_FENTRY(mysqli_prepare,zif_pw_mysqli_call,pw_db_args,0)
@@ -502,6 +512,7 @@ static const zend_function_entry pw_mysqli_functions[]={
     ZEND_FE_END
 };
 static const zend_function_entry pw_mysqli_methods[]={
+    ZEND_RAW_FENTRY("multi_query",zif_pw_mysqli_call,pw_db_args,ZEND_ACC_PUBLIC)
     ZEND_RAW_FENTRY("__construct",zif_pw_mysqli_call,pw_db_args,ZEND_ACC_PUBLIC)
     ZEND_RAW_FENTRY("real_connect",zif_pw_mysqli_call,pw_db_args,ZEND_ACC_PUBLIC)
     ZEND_RAW_FENTRY("close",zif_pw_mysqli_call,pw_db_args,ZEND_ACC_PUBLIC)
@@ -526,6 +537,7 @@ static const zend_function_entry pw_mysqli_methods[]={
     ZEND_FE_END
 };
 static const zend_function_entry pw_result_methods[]={
+    ZEND_RAW_FENTRY("close",zif_pw_mysqli_call,pw_db_args,ZEND_ACC_PUBLIC)
     ZEND_RAW_FENTRY("fetch_assoc",zif_pw_mysqli_call,pw_db_args,ZEND_ACC_PUBLIC)
     ZEND_RAW_FENTRY("fetch_row",zif_pw_mysqli_call,pw_db_args,ZEND_ACC_PUBLIC)
     ZEND_RAW_FENTRY("fetch_array",zif_pw_mysqli_call,pw_db_args,ZEND_ACC_PUBLIC)

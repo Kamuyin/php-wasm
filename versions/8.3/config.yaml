@@ -36,5 +36,7 @@ version_patches:
   - "0006-83-native-runtime"
   - "0007-83-wasi-standard-streams"
   - "0008-83-native-provenance"
+  - "0009-83-wasi-openssl-crypto"
+  - "0010-83-wasi-exception-handler-exit"
 
 notes: "Primary supported branch. Patches from VMware WasmLabs webassembly-language-runtimes/php/master."

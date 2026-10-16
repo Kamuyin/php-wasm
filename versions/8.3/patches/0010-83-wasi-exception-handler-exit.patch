@@ -1,0 +1,18 @@
+--- a/Zend/zend_exceptions.c
++++ b/Zend/zend_exceptions.c
+@@ -197,6 +197,15 @@
+ 		}
+ 	}
+ 	if (!EG(current_execute_data)) {
++#ifdef __wasi__
++        /* A PHP exception handler may exit after rendering its response. Its
++         * VM frames have already unwound when zend_call_function rethrows here.
++         * Return the exit marker to the C caller for normal request cleanup;
++         * WASI has no native longjmp target for zend_bailout(). */
++        if (EG(exception) && (zend_is_unwind_exit(EG(exception)) || zend_is_graceful_exit(EG(exception)))) {
++            return;
++        }
++#endif
+ 		if (exception && (exception->ce == zend_ce_parse_error || exception->ce == zend_ce_compile_error)) {
+ 			return;
+ 		}

@@ -1,0 +1,55 @@
+# $schema: ../schemas/profile.schema.json
+name: "moodle-database"
+description: "Private Moodle SQL worker with 64-bit PHP integers"
+
+configure_flags:
+    # Inherited from default.yaml
+    - "--enable-mbstring"
+    - "--disable-mbregex"
+    - "--enable-ctype"
+    - "--enable-filter"
+    - "--enable-tokenizer"
+    - "--enable-bcmath"
+    - "--enable-calendar"
+    - "--enable-session"
+    - "--enable-pdo"
+    - "--with-pdo-sqlite=deps/sqlite3-wasm"
+    - "--with-sqlite3=deps/sqlite3-wasm"
+    # libxml2-backed XML stack — required by WordPress for RSS, oEmbed,
+    # SimpleXML, importer plugin, and several core functions
+    - "--with-libxml=deps/libxml2-wasm"
+    - "--enable-xml"
+    - "--enable-dom"
+    - "--enable-simplexml"
+    - "--enable-xmlreader"
+    - "--enable-xmlwriter"
+    # File handling for media uploads
+    - "--enable-fileinfo"
+    - "--enable-exif"
+
+extensions_snapshot:
+    - json
+    - mbstring
+    - session
+    - ctype
+    - filter
+    - tokenizer
+    - bcmath
+    - calendar
+    - pdo
+    - pdo_sqlite
+    - sqlite3
+    - xml
+    - dom
+    - simplexml
+    - xmlreader
+    - xmlwriter
+    - fileinfo
+    - exif
+
+required_libs: [sqlite3, libxml2]
+
+expected_wasm_size_kb: 8000
+
+notes: |
+    WASI-only interpreter for the private database worker. No native host imports.

@@ -38,12 +38,17 @@ CFLAGS="${CFLAGS} -DWASM_WASI=1"
 CFLAGS="${CFLAGS} -DPHP_WASM_PROFILE_NAME=\"${PROFILE}\""
 CFLAGS="${CFLAGS} -mno-exception-handling"
 CFLAGS="${CFLAGS} -I${REPO_ROOT}/stubs"
-if [[ "${PROFILE}" == "honeypot" ]]; then
+if [[ "${PROFILE}" == "honeypot" || "${PROFILE}" == "moodle" ]]; then
     if [[ "${VERSION}" != "8.3" ]]; then
         echo "ERROR: The native runtime interface currently supports PHP 8.3 only" >&2
         exit 1
     fi
     CFLAGS="${CFLAGS} -DPHP_WASM_RUNTIME=1"
+fi
+if [[ "${PROFILE}" == "moodle" || "${PROFILE}" == "moodle-database" ]]; then
+    # PHP integers and hash keys are 64-bit while WASI pointers remain 32-bit.
+    # Zend supports int64 zvals independently of the host C long/size_t types.
+    CFLAGS="${CFLAGS} -DZEND_ENABLE_ZVAL_LONG64=1"
 fi
 
 LDFLAGS="--sysroot=${WASI_SYSROOT}"
@@ -67,6 +72,13 @@ for pc_dir in "${REPO_ROOT}"/deps/*/lib/pkgconfig; do
     WASM_PKGCONFIG="${WASM_PKGCONFIG:+${WASM_PKGCONFIG}:}${pc_dir}"
 done
 [[ -n "${WASM_PKGCONFIG}" ]] && export PKG_CONFIG_PATH="${WASM_PKGCONFIG}:${PKG_CONFIG_PATH:-}"
+
+if [[ "${PROFILE}" == "moodle" ]]; then
+    export PKG_CONFIG_LIBDIR="${WASM_PKGCONFIG}"
+    export CURL_LIBS="$(pkg-config --static --libs libcurl)"
+    export LIBZIP_LIBS="$(pkg-config --static --libs libzip)"
+    export ICU_LIBS="$(pkg-config --static --libs icu-uc icu-i18n icu-io) -lc++ -lc++abi"
+fi
 
 read_yaml_list() {
     local file="$1" key="$2" in_list=0
@@ -108,6 +120,7 @@ CONFIGURE_ARGS=(
     "NM=${NM}"
     "STRIP=${STRIP}"
     "CFLAGS=${CFLAGS}"
+    "CXXFLAGS=${CFLAGS} -fno-exceptions"
     "LDFLAGS=${LDFLAGS}"
 )
 

@@ -4,6 +4,12 @@
  * The application never loads these classes or mounts these files. */
 require __DIR__ . '/mysql/load.php';
 
+// This file is read only in the private, signed backend bundle.
+$databaseConfig = is_file(__DIR__.'/config.json') ? json_decode(file_get_contents(__DIR__.'/config.json'), true, 8, JSON_THROW_ON_ERROR) : [];
+$mysqlVersion = $databaseConfig['mysql_version'] ?? 80038;
+if (!in_array($mysqlVersion, [80038, 80400], true)) throw new RuntimeException('Unsupported MySQL compatibility version');
+define('MYSQL_COMPATIBILITY_VERSION', $mysqlVersion);
+
 const MAX_QUERY_BYTES = 262144;
 const MAX_RESULT_BYTES = 3145728;
 const MAX_ROWS = 10000;
@@ -81,6 +87,54 @@ function decodeValue($value) {
 }
 function encodeValue($value) { return is_string($value)?['bytes'=>base64_encode($value)]:$value; }
 
+/** Split explicit mysqli multi_query batches, respecting SQL lexical boundaries.
+ * Ordinary query/prepare calls still reject multiple statements. Each queued
+ * statement goes through the same file-access policy and resource limits. */
+function mysqlBatch(string $sql, array $ranges): array {
+    if (strlen($sql) > 524288) throw new RuntimeException('SQL batch exceeds size limit');
+    $parts=[];$start=0;$length=strlen($sql);
+    for ($i=0;$i<$length;$i++) {
+        $c=$sql[$i];
+        if ($c==="'" || $c==='"' || $c==='`') {
+            $quote=$c;$closed=false;
+            while (++$i<$length) {
+                if ($sql[$i]==='\\') { $i++;continue; }
+                if ($sql[$i]===$quote) {
+                    if ($i+1<$length && $sql[$i+1]===$quote) { $i++;continue; }
+                    $closed=true;break;
+                }
+            }
+            if (!$closed) throw new RuntimeException('Unclosed SQL quote');
+        } elseif ($c==='#' || substr($sql,$i,2)==='--') {
+            $end=strpos($sql,"\n",$i);$i=$end===false?$length:$end;
+        } elseif (substr($sql,$i,2)==='/*') {
+            $end=strpos($sql,'*/',$i+2);
+            if ($end===false) throw new RuntimeException('Unclosed SQL comment');
+            $i=$end+1;
+        } elseif ($c===';') {
+            $parts[]=[$start,$i-$start];$start=$i+1;
+        }
+        if (count($parts)>2048) throw new RuntimeException('SQL batch statement limit exceeded');
+    }
+    if ($start<$length) $parts[]=[$start,$length-$start];
+    $batch=[];
+    foreach ($parts as [$start,$length]) {
+        $statement=substr($sql,$start,$length);
+        if (trim($statement)==='') continue;
+        if (!array_filter(tokens($statement),fn($t)=>!in_array($t['kind'],['space','comment']))) continue;
+        checkQuery($statement,'mysql');
+        $provenance=[];
+        foreach (array_slice($ranges,0,64) as $range) {
+            $left=max($start,(int)($range['start']??0));
+            $right=min($start+$length,(int)($range['start']??0)+(int)($range['length']??0));
+            if ($right>$left) { $range['start']=$left-$start;$range['length']=$right-$left;$provenance[]=$range; }
+        }
+        $batch[]=['sql_b64'=>base64_encode($statement),'provenance'=>$provenance];
+    }
+    if (!$batch || count($batch)>2048) throw new RuntimeException('Invalid SQL batch');
+    return $batch;
+}
+
 function sqlEvidence(array $list, array $ranges, bool $executed, string $driver): array {
     // A quote that began in trusted SQL is closed by request-derived bytes,
     // followed by request-derived SQL syntax. Escaped strings and bound values
@@ -134,20 +188,46 @@ function executeRequest(array $request, array &$connections, int &$next): array 
         $sqlite->exec('PRAGMA journal_mode=DELETE');$sqlite->exec('PRAGMA synchronous=FULL');
         $sqlite->exec('PRAGMA max_page_count=16384');$sqlite->exec('PRAGMA temp_store=MEMORY');
         if ($driver==='mysql') {
-            $db=new WP_MySQL_On_SQLite('mysql-on-sqlite:dbname='.$name,null,null,['sqlite_pdo'=>$sqlite,'sqlite_journal_mode'=>'DELETE','sqlite_synchronous'=>'FULL']);
+            // UTF-8 byte ordering preserves Unicode code-point ordering. MySQL's
+            // legacy *_bin collations ignore trailing U+0020 (PAD SPACE).
+            foreach (['utf8_bin','utf8mb3_bin','utf8mb4_bin'] as $collation) {
+                $sqlite->sqliteCreateCollation($collation,fn($a,$b)=>strcmp(rtrim($a,' '),rtrim($b,' ')));
+            }
+            $db=new WP_MySQL_On_SQLite('mysql-on-sqlite:dbname='.$name,null,null,['sqlite_pdo'=>$sqlite,'sqlite_journal_mode'=>'DELETE','sqlite_synchronous'=>'FULL','mysql_version'=>MYSQL_COMPATIBILITY_VERSION]);
         } else {
             $db=$sqlite;
             $db->sqliteCreateFunction('version',fn()=>'PostgreSQL 16.4 on x86_64-pc-linux-gnu',0);
             $db->sqliteCreateFunction('current_database',fn()=>$name,0);
         }
         $id=$next++;$connections[$id]=['db'=>$db,'sqlite'=>$sqlite,'driver'=>$driver,'statements'=>[]];
-        return ['ok'=>true,'connection'=>$id,'server_version'=>$driver==='mysql'?'8.0.38':'16.4'];
+        return ['ok'=>true,'connection'=>$id,'server_version'=>$driver==='mysql'?$db->getAttribute(PDO::ATTR_SERVER_VERSION):'16.4', 'server_version_id'=>$driver==='mysql'?MYSQL_COMPATIBILITY_VERSION:160004];
     }
     $id=(int)($request['connection']??0);
     if (!isset($connections[$id])) throw new RuntimeException('Connection is closed');
     if ($op==='close') { if($connections[$id]['sqlite']->inTransaction())$connections[$id]['sqlite']->rollBack();unset($connections[$id]);gc_collect_cycles();return ['ok'=>true]; }
     $connection=&$connections[$id];$db=$connection['db'];$driver=$connection['driver'];
     if ($op==='quote') return ['ok'=>true,'quoted'=>base64_encode($db->quote(decodeValue($request['value']??'')))];
+    if ($op==='multi_query' || $op==='next_result') {
+        if ($driver!=='mysql') throw new RuntimeException('Batch queries require MySQL');
+        if ($op==='multi_query') {
+            if (!empty($connection['pending'])) throw new RuntimeException('Previous results have not been consumed');
+            $sql=base64_decode($request['sql_b64']??'',true);
+            if ($sql===false) throw new RuntimeException('Invalid SQL encoding');
+            $connection['pending']=mysqlBatch($sql,$request['provenance']??[]);
+        }
+        if (empty($connection['pending'])) return ['ok'=>false,'more_results'=>false];
+        $nextRequest=array_shift($connection['pending']);
+        try {
+            $result=executeRequest($nextRequest+['op'=>'query','connection'=>$id,'batch_statement'=>true],$connections,$next);
+        } catch (Throwable $error) {
+            $connection['pending']=[];
+            throw $error;
+        }
+        if (empty($result['ok'])) $connection['pending']=[];
+        $result['more_results']=!empty($connection['pending']);
+        return $result;
+    }
+    if (!empty($connection['pending']) && empty($request['batch_statement'])) throw new RuntimeException('Previous results have not been consumed');
     $sql=base64_decode($request['sql_b64']??'',true);if ($sql===false) throw new RuntimeException('Invalid SQL encoding');
     $list=checkQuery($sql,$driver);
     if ($driver==='pgsql') {
@@ -171,6 +251,14 @@ function executeRequest(array $request, array &$connections, int &$next): array 
     if ($op!=='query') throw new RuntimeException('Unsupported database operation');
     $params=$request['params']??[];
     if (!is_array($params)) throw new RuntimeException('Invalid parameters');
+    // SQLite uses serializable transactions, which meet the no-dirty-read
+    // guarantee requested here. Keep that stronger isolation; never enable
+    // shared-cache/read_uncommitted or silently accept other SET statements.
+    $words=array_map(fn($t)=>strtoupper($t['text']),array_values(array_filter($list,fn($t)=>!in_array($t['kind'],['space','comment']))));
+    if (end($words)===';') array_pop($words);
+    if ($driver==='mysql' && !$params && $words===['SET','SESSION','TRANSACTION','ISOLATION','LEVEL','READ','COMMITTED']) {
+        return ['ok'=>true,'columns'=>[],'rows'=>[],'affected_rows'=>0,'insert_id'=>'0'];
+    }
     $executed=false;
     try {
     if ($driver==='mysql') {

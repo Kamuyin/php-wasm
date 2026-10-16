@@ -1,0 +1,37 @@
+--- a/mysql/sqlite/class-wp-mysql-on-sqlite.php
++++ b/mysql/sqlite/class-wp-mysql-on-sqlite.php
+@@ -3357,7 +3357,11 @@
+ 			FROM (
+ 				VALUES
+ 					('version', ?),
+-					('version_comment', ?)
++					('version_comment', ?),
++					('innodb_file_per_table', 'ON'),
++					('innodb_large_prefix', 'ON'),
++					('innodb_file_format', 'Barracuda'),
++					('max_allowed_packet', '262144')
+ 			)
+ 			WHERE TRUE %s
+ 			ORDER BY column1",
+@@ -5188,11 +5192,7 @@
+ 	 * @return string The MySQL server version.
+ 	 */
+ 	private function get_mysql_server_version_string(): string {
+-		return sprintf(
+-			'%s-mysql-on-sqlite-%s',
+-			$this->get_mysql_version_string(),
+-			SQLITE_DRIVER_VERSION
+-		);
++		return $this->get_mysql_version_string();
+ 	}
+ 
+ 	/**
+@@ -5201,7 +5201,7 @@
+ 	 * @return string The MySQL server version comment.
+ 	 */
+ 	private function get_mysql_server_version_comment(): string {
+-		return 'MySQL on SQLite';
++		return 'MySQL Community Server - GPL';
+ 	}
+ 
+ 	/**

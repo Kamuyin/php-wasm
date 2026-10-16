@@ -1,6 +1,6 @@
 # Embedded MySQL and PostgreSQL compatibility
 
-PHP 8.3's `honeypot` profile exposes native `mysqli`, `mysqli_result`,
+PHP 8.3's `honeypot` and `moodle` profiles expose native `mysqli`, `mysqli_result`,
 `mysqli_stmt`, `PgSql\Connection`, `PgSql\Result`, and PDO `mysql`/`pgsql`
 drivers. PHP reflection reports internal functions/classes and ordinary driver
 names. No translator classes, SQLite WordPress plugin, or `db.php` drop-in are
@@ -64,7 +64,27 @@ turning emulation off is unsupported. MySQL SQL modes that change quote syntax
 computed SQL-mode assignments are rejected
 so parameter escaping and evidence parsing use the same lexical rules.
 
-Unsupported surfaces include multi-statements/results, async queries,
+Explicit `mysqli::multi_query`/`mysqli_multi_query` batches support up to 2,048
+statements and 512 KiB total. Each statement retains the 256 KiB cap and the
+same SQL policy. Quotes and comments delimit statements; results are consumed
+with `store_result`, `more_results` and `next_result`. A failed statement ends
+the batch. Pending statements are discarded at request reset. Ordinary
+query/prepare calls still reject multiple statements.
+
+The private backend's optional `config.json` may select `mysql_version: 80400`
+for Moodle, or `80038` (the default). The upstream parser receives this version;
+the PHP facade uses the same connection metadata. Local patches expose plain
+MySQL version strings and InnoDB compatibility variables. SQLite remains the
+storage engine. `SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED` keeps
+SQLite's stronger serializable isolation; it does not enable dirty reads.
+See [SQLite isolation](https://www.sqlite.org/isolation.html). These are
+compatibility semantics, not full InnoDB or MariaDB equivalence.
+The `utf8_bin`, `utf8mb3_bin` and `utf8mb4_bin` collations compare UTF-8 code
+points with MySQL's PAD SPACE behavior, including case-sensitive comparisons.
+Other collation and case-folding behavior remains limited by the upstream
+translator and SQLite; full MySQL Unicode collation equivalence is not claimed.
+
+Unsupported surfaces include async queries,
 server-side cursors, persistent PDO connections, replication, stored procedures,
 triggers, server administration and complete extension/reflection parity.
 Some field metadata and diagnostics are approximations. Unimplemented APIs

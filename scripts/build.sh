@@ -9,7 +9,7 @@ print_usage() {
     echo "Usage: $0 <version> <profile> [--output-dir <dir>] [--no-wasm-opt] [--jobs N]"
     echo ""
     echo "  version       PHP version: 8.2, 8.3, or 8.4"
-    echo "  profile       Build profile: minimal, default, full, honeypot"
+    echo "  profile       Build profile: minimal, default, full, honeypot, moodle, moodle-database"
     echo "  --output-dir  Output directory (default: ./out)"
     echo "  --no-wasm-opt Skip wasm-opt even when it is available"
     echo "  --jobs N      Parallel make jobs (default: nproc)"
@@ -70,6 +70,13 @@ PATCHSET_KEY="$(
     {
         sha256sum "${VERSION_DIR}/config.yaml"
         sha256sum "${PROFILE_FILE}" "${SCRIPT_DIR}/configure-php.sh"
+        if [[ "${PROFILE}" == moodle* ]]; then
+            sha256sum "${SCRIPT_DIR}/build-moodle-deps.sh" "${REPO_ROOT}/libraries/moodle.lock.json"
+            "${WASI_SDK_PATH:-/opt/wasi-sdk}/bin/clang" --version
+            find "${REPO_ROOT}/runtime/wasi-offline" -type f -print | sort | while read -r f; do
+                sha256sum "${f}"
+            done
+        fi
         find "${REPO_ROOT}/runtime" -maxdepth 1 -type f -name 'php_wasm_*' -print | sort | while read -r f; do
             sha256sum "${f}"
         done
